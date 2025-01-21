@@ -10,7 +10,7 @@ import argparse
 from torch.utils.tensorboard import SummaryWriter
 import random
 
-def train(agent, env, num_episodes=500, agent_type = 'ppo', safety_layer_enabled = False, nn_cbf_update = False, filter_update = True, SIDE_update = False):
+def train(agent, env, num_episodes=500, agent_type = 'ppo', safety_layer_enabled = False, filter_update = True, SIDE_update = False):
     '''
     Train the agent
     '''
@@ -77,11 +77,7 @@ def train(agent, env, num_episodes=500, agent_type = 'ppo', safety_layer_enabled
         # Save the model parameters
         if episode%50 == 0:
             agent.save("model_parameters", episode)
-            if nn_cbf_update:
-                agent.barrier_optimizer_FV1.save("model_parameters", episode, 'FV1')
-                agent.barrier_optimizer_FV2.save("model_parameters", episode, 'FV2')
-        if nn_cbf_update:
-            print("Episode: {}, Reward: {}, Loss_FV1: {}, Loss_FV2: {}".format(episode, episode_reward, np.mean(agent.barrier_optimizer_FV1.loss_lst[-2:-1]), np.mean(agent.barrier_optimizer_FV2.loss_lst[-2:-1])))
+        
         elif filter_update:
             print("Episode: {}, Reward: {}, Parameter FW1: {}, Parameter FW2: {}".format(episode, episode_reward, agent.FW1_parameters, agent.FW2_parameters))
         elif SIDE_update:
@@ -93,9 +89,6 @@ def train(agent, env, num_episodes=500, agent_type = 'ppo', safety_layer_enabled
     velocity_data = np.array(velocity_data)
     spacing_data = np.array(spacing_data)
     
-    if nn_cbf_update:
-        agent.barrier_optimizer_FV1.save_loss_data('training_traj/loss_data_neural_barrier_FV1_' + agent_type + '.csv')
-        agent.barrier_optimizer_FV2.save_loss_data('training_traj/loss_data_neural_barrier_FV2_' + agent_type + '.csv')
     if SIDE_update:
         agent.SIDE_FV1.save_model('model_parameters/SIDE_FV1_')
         agent.SIDE_FV2.save_model('model_parameters/SIDE_FV2_')
@@ -232,7 +225,7 @@ if __name__ == "__main__":
     # Train new model or load pretrained model
     if agent_train:
         # Train the agent
-        episode_rewards, velocity_data, spacing_data = train(agent, env, agent_type = agent_select, safety_layer_enabled = safety_layer_enabled, nn_cbf_update = nn_cbf_update, filter_update = filter_update, SIDE_update = SIDE_update)
+        episode_rewards, velocity_data, spacing_data = train(agent, env, agent_type = agent_select, safety_layer_enabled = safety_layer_enabled, filter_update = filter_update, SIDE_update = SIDE_update)
         # Save the training data
         if safety_layer_enabled:
             episode_rewards_pd = pd.DataFrame(episode_rewards).to_csv('training_traj/episode_rewards_' + agent_select + '.csv')
