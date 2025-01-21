@@ -4,7 +4,6 @@ import matplotlib
 import numpy as np
 import matplotlib.animation as animation
 from platoon_env import PlatoonEnv
-from ddpg_agent import DDPGAgent
 from ppo_agent import PPOAgent
 import torch
 from matplotlib.colors import ListedColormap, Normalize
@@ -209,106 +208,67 @@ if __name__ == '__main__':
     agent_type = 'ppo'
 
     # Create the agent
-    if agent_type == 'ddpg':
-        parser = argparse.ArgumentParser("Hyperparameters Setting for DDPG")
-        parser.add_argument("--max_train_steps", type=int, default=int(3e6), help=" Maximum number of training steps")
-        parser.add_argument("--batch_size", type=int, default=8, help="Batch size")
-        parser.add_argument("--hidden_dims", type=list, default=[128, 128],
-                            help="The number of neurons in hidden layers of the neural network")
-        parser.add_argument("--lr_actor", type=float, default=1e-4, help="Learning rate of actor")
-        parser.add_argument("--lr_critic", type=float, default=1e-3, help="Learning rate of critic")
-        parser.add_argument("--buffer_size", type=int, default=int(1e5), help="Size of the replay buffer")
-        parser.add_argument("--tau", type=float, default=1e-3, help="Update rate of target network")
-        parser.add_argument("--gamma", type=float, default=0.99, help="Discount factor")
-        parser.add_argument("--safety_layer_enabled", type=bool, default=safety_layer_enabled, #
-                            help="Safety layer enabled or not")
-        parser.add_argument("--cbf_tau", type=float, default=0.1, help="CAV index in the platoon")
-        parser.add_argument("--cbf_gamma", type=float, default=1, help="CAV index in the platoon")
-        parser.add_argument("--CAV_idx", type=float, default=1, help="CAV index in the platoon")
-        parser.add_argument("--FV1_idx", type=float, default=2, help="CAV index in the platoon")
-        parser.add_argument("--FV2_idx", type=float, default=3, help="CAV index in the platoon")
-        parser.add_argument("--Lf_CAV", type=float, default=0.5, help="CAV index in the platoon")
-        parser.add_argument("--Lg_CAV", type=float, default=0.5, help="CAV index in the platoon")
-        parser.add_argument("--Lf_FV1", type=float, default=0.5, help="CAV index in the platoon")
-        parser.add_argument("--Lg_FV1", type=float, default=0.5, help="CAV index in the platoon")
-        parser.add_argument("--Lf_FV2", type=float, default=0.5, help="CAV index in the platoon")
-        parser.add_argument("--Lg_FV2", type=float, default=0.5, help="CAV index in the platoon")
-        parser.add_argument("--dt", type=float, default=0.1, help="CAV index in the platoon")
-        parser.add_argument("--lr_cbf", type=float, default=1e-4, help="CAV index in the platoon")
-        parser.add_argument("--state_size_nncbf", type=float, default=12, help="CAV index in the platoon")
-        parser.add_argument("--hidden_size_nncbf", type=float, default=100, help="CAV index in the platoon")
-        parser.add_argument("--output_size_nncbf", type=float, default=2, help="CAV index in the platoon")
-        parser.add_argument("--safety_layer_no_grad", type=bool, default=True, help="CAV index in the platoon")
-        args = parser.parse_args()
-        args.device = device
-        args.state_dim = env_rl.observation_space.shape[0]
-        args.action_dim = env_rl.action_space.shape[0]
-        args.max_action = 5.0
-        args.max_episode_steps = env_rl.max_steps
-        agent = DDPGAgent(args)
-
-    elif agent_type == 'ppo':
-        parser = argparse.ArgumentParser("Hyperparameters Setting for PPO")
-        parser.add_argument("--max_train_steps", type=int, default=int(3e6), help=" Maximum number of training steps")
-        parser.add_argument("--evaluate_freq", type=float, default=5e3, help="Evaluate the policy every 'evaluate_freq' steps")
-        parser.add_argument("--save_freq", type=int, default=20, help="Save frequency")
-        parser.add_argument("--batch_size", type=int, default=2048, help="Batch size")
-        parser.add_argument("--mini_batch_size", type=int, default=64, help="Minibatch size")
-        parser.add_argument("--hidden_width", type=int, default=64, help="The number of neurons in hidden layers of the neural network")
-        parser.add_argument("--lr_a", type=float, default=3e-4, help="Learning rate of actor")
-        parser.add_argument("--lr_c", type=float, default=3e-4, help="Learning rate of critic")
-        parser.add_argument("--gamma", type=float, default=0.99, help="Discount factor")
-        parser.add_argument("--lamda", type=float, default=0.95, help="GAE parameter")
-        parser.add_argument("--epsilon", type=float, default=0.2, help="PPO clip parameter")
-        parser.add_argument("--K_epochs", type=int, default=10, help="PPO parameter")
-        parser.add_argument("--is_adv_norm", type=bool, default=True, help="Advantage normalization")
-        parser.add_argument("--is_state_norm", type=bool, default=True, help="State normalization")
-        parser.add_argument("--is_reward_norm", type=bool, default=False, help="Reward normalization")
-        parser.add_argument("--is_reward_scaling", type=bool, default=True, help="Reward scaling")
-        parser.add_argument("--entropy_coef", type=float, default=0.01, help="Policy entropy")
-        parser.add_argument("--is_lr_decay", type=bool, default=True, help="Learning rate Decay")
-        parser.add_argument("--is_grad_clip", type=bool, default=True, help="Gradient clip")
-        parser.add_argument("--is_orthogonal_init", type=bool, default=True, help="Orthogonal initialization")
-        parser.add_argument("--adam_eps", type=float, default=True, help="Set Adam epsilon=1e-5")
-        parser.add_argument("--is_tanh", type=float, default=True, help="Tanh activation function")
-        parser.add_argument("--safety_layer_enabled", type=bool, default=safety_layer_enabled, help="Safety layer enabled or not") #default = safety_layer_enabled
-        parser.add_argument("--nn_cbf_enabled", type=bool, default=nn_cbf_enabled, help="NN dynamics enabled or not")
-        parser.add_argument("--CAV_index", type=float, default=1, help="CAV index in the platoon")
-        parser.add_argument("--cbf_tau", type=float, default=0.3, help="CAV index in the platoon")
-        parser.add_argument("--cbf_gamma", type=float, default=1, help="CAV index in the platoon")
-        parser.add_argument("--CAV_idx", type=float, default=1, help="CAV index in the platoon")
-        parser.add_argument("--FV1_idx", type=float, default=2, help="CAV index in the platoon")
-        parser.add_argument("--FV2_idx", type=float, default=3, help="CAV index in the platoon")
-        parser.add_argument("--Lf_CAV", type=float, default=0.5, help="CAV index in the platoon")
-        parser.add_argument("--Lg_CAV", type=float, default=0.5, help="CAV index in the platoon")
-        parser.add_argument("--Lf_FV1", type=float, default=0.5, help="CAV index in the platoon")
-        parser.add_argument("--Lg_FV1", type=float, default=0.5, help="CAV index in the platoon")
-        parser.add_argument("--Lf_FV2", type=float, default=0.5, help="CAV index in the platoon")
-        parser.add_argument("--Lg_FV2", type=float, default=0.5, help="CAV index in the platoon")
-        parser.add_argument("--dt", type=float, default=0.1, help="CAV index in the platoon")
-        parser.add_argument("--lr_cbf", type=float, default=1e-4, help="CAV index in the platoon")
-        parser.add_argument("--state_size_nncbf", type=float, default=4, help="CAV index in the platoon")
-        parser.add_argument("--hidden_size_nncbf", type=float, default=128, help="CAV index in the platoon")
-        parser.add_argument("--output_size_nncbf", type=float, default=1, help="CAV index in the platoon")
-        parser.add_argument("--safety_layer_no_grad", type=bool, default=safety_layer_no_grad, help="CAV index in the platoon")
-        parser.add_argument("--car_following_parameters", type=list, default=[3,3,3], help="car following parameters initialized") #0.5,0.4,0.3 [2,2,2] [1.2566, 1.5000, 0.9000]
-        parser.add_argument("--nn_cbf_update",type=bool, default=nn_cbf_update, help="NN dynamics online update enabled or not")
-        parser.add_argument("--num_episodes",type=int, default=100, help="number of episodes for training")
-        parser.add_argument("--vehicle_num",type=int, default = 5, help="number of vehicles in the platoon")
-        parser.add_argument("--filter_update", type=bool, default=filter_update, help="filter update enabled or not")
-        parser.add_argument("--SIDE_update", type=bool, default=SIDE_update, help="SIDE update enabled or not")
-        parser.add_argument("--lr_cf", type=float, default=1e-3, help="SI learning rate")
-        parser.add_argument("--lr_de", type=float, default=1e-3, help="DE learning rate")
-        parser.add_argument("--batch_size_SIDE", type=int, default=64, help="SIDE batch size")
-        parser.add_argument("--buffer_size_SIDE", type=int, default=10000, help="SIDE buffer size")
-        parser.add_argument("--SIDE_enabled", type=bool, default=SIDE_enabled, help="SIDE enabled or not")
-        args = parser.parse_args()
-        args.device = device
-        args.state_dim = env_rl.observation_space.shape[0]
-        args.action_dim = env_rl.action_space.shape[0]
-        args.max_action = 5.0
-        args.max_episode_steps = env_rl.max_steps
-        agent = PPOAgent(args)
+    parser = argparse.ArgumentParser("Hyperparameters Setting for PPO")
+    parser.add_argument("--max_train_steps", type=int, default=int(3e6), help=" Maximum number of training steps")
+    parser.add_argument("--evaluate_freq", type=float, default=5e3, help="Evaluate the policy every 'evaluate_freq' steps")
+    parser.add_argument("--save_freq", type=int, default=20, help="Save frequency")
+    parser.add_argument("--batch_size", type=int, default=2048, help="Batch size")
+    parser.add_argument("--mini_batch_size", type=int, default=64, help="Minibatch size")
+    parser.add_argument("--hidden_width", type=int, default=64, help="The number of neurons in hidden layers of the neural network")
+    parser.add_argument("--lr_a", type=float, default=3e-4, help="Learning rate of actor")
+    parser.add_argument("--lr_c", type=float, default=3e-4, help="Learning rate of critic")
+    parser.add_argument("--gamma", type=float, default=0.99, help="Discount factor")
+    parser.add_argument("--lamda", type=float, default=0.95, help="GAE parameter")
+    parser.add_argument("--epsilon", type=float, default=0.2, help="PPO clip parameter")
+    parser.add_argument("--K_epochs", type=int, default=10, help="PPO parameter")
+    parser.add_argument("--is_adv_norm", type=bool, default=True, help="Advantage normalization")
+    parser.add_argument("--is_state_norm", type=bool, default=True, help="State normalization")
+    parser.add_argument("--is_reward_norm", type=bool, default=False, help="Reward normalization")
+    parser.add_argument("--is_reward_scaling", type=bool, default=True, help="Reward scaling")
+    parser.add_argument("--entropy_coef", type=float, default=0.01, help="Policy entropy")
+    parser.add_argument("--is_lr_decay", type=bool, default=True, help="Learning rate Decay")
+    parser.add_argument("--is_grad_clip", type=bool, default=True, help="Gradient clip")
+    parser.add_argument("--is_orthogonal_init", type=bool, default=True, help="Orthogonal initialization")
+    parser.add_argument("--adam_eps", type=float, default=True, help="Set Adam epsilon=1e-5")
+    parser.add_argument("--is_tanh", type=float, default=True, help="Tanh activation function")
+    parser.add_argument("--safety_layer_enabled", type=bool, default=safety_layer_enabled, help="Safety layer enabled or not") #default = safety_layer_enabled
+    parser.add_argument("--nn_cbf_enabled", type=bool, default=nn_cbf_enabled, help="NN dynamics enabled or not")
+    parser.add_argument("--CAV_index", type=float, default=1, help="CAV index in the platoon")
+    parser.add_argument("--cbf_tau", type=float, default=0.3, help="CAV index in the platoon")
+    parser.add_argument("--cbf_gamma", type=float, default=1, help="CAV index in the platoon")
+    parser.add_argument("--CAV_idx", type=float, default=1, help="CAV index in the platoon")
+    parser.add_argument("--FV1_idx", type=float, default=2, help="CAV index in the platoon")
+    parser.add_argument("--FV2_idx", type=float, default=3, help="CAV index in the platoon")
+    parser.add_argument("--Lf_CAV", type=float, default=0.5, help="CAV index in the platoon")
+    parser.add_argument("--Lg_CAV", type=float, default=0.5, help="CAV index in the platoon")
+    parser.add_argument("--Lf_FV1", type=float, default=0.5, help="CAV index in the platoon")
+    parser.add_argument("--Lg_FV1", type=float, default=0.5, help="CAV index in the platoon")
+    parser.add_argument("--Lf_FV2", type=float, default=0.5, help="CAV index in the platoon")
+    parser.add_argument("--Lg_FV2", type=float, default=0.5, help="CAV index in the platoon")
+    parser.add_argument("--dt", type=float, default=0.1, help="CAV index in the platoon")
+    parser.add_argument("--lr_cbf", type=float, default=1e-4, help="CAV index in the platoon")
+    parser.add_argument("--state_size_nncbf", type=float, default=4, help="CAV index in the platoon")
+    parser.add_argument("--hidden_size_nncbf", type=float, default=128, help="CAV index in the platoon")
+    parser.add_argument("--output_size_nncbf", type=float, default=1, help="CAV index in the platoon")
+    parser.add_argument("--safety_layer_no_grad", type=bool, default=safety_layer_no_grad, help="CAV index in the platoon")
+    parser.add_argument("--car_following_parameters", type=list, default=[3,3,3], help="car following parameters initialized") #0.5,0.4,0.3 [2,2,2] [1.2566, 1.5000, 0.9000]
+    parser.add_argument("--nn_cbf_update",type=bool, default=nn_cbf_update, help="NN dynamics online update enabled or not")
+    parser.add_argument("--num_episodes",type=int, default=100, help="number of episodes for training")
+    parser.add_argument("--vehicle_num",type=int, default = 5, help="number of vehicles in the platoon")
+    parser.add_argument("--filter_update", type=bool, default=filter_update, help="filter update enabled or not")
+    parser.add_argument("--SIDE_update", type=bool, default=SIDE_update, help="SIDE update enabled or not")
+    parser.add_argument("--lr_cf", type=float, default=1e-3, help="SI learning rate")
+    parser.add_argument("--lr_de", type=float, default=1e-3, help="DE learning rate")
+    parser.add_argument("--batch_size_SIDE", type=int, default=64, help="SIDE batch size")
+    parser.add_argument("--buffer_size_SIDE", type=int, default=10000, help="SIDE buffer size")
+    parser.add_argument("--SIDE_enabled", type=bool, default=SIDE_enabled, help="SIDE enabled or not")
+    args = parser.parse_args()
+    args.device = device
+    args.state_dim = env_rl.observation_space.shape[0]
+    args.action_dim = env_rl.action_space.shape[0]
+    args.max_action = 5.0
+    args.max_episode_steps = env_rl.max_steps
+    agent = PPOAgent(args)
 
     # Load the pre-trained model
     agent.load('model_parameters/', 500)

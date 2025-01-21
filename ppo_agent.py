@@ -6,11 +6,11 @@ from torch.distributions import Normal
 from utils import ReplayBuffer_PPO
 import os
 from BarrierNet import BarrierLayer
-from NeuralBarrier import *
 import argparse
 from platoon_env import PlatoonEnv
 import padasip as pa
 from NN_SI import NN_SI_DE_Module
+import numpy as np
 
 # Orthogonal initialization
 def orthogonal_init(layer, gain=1.0):
@@ -147,17 +147,6 @@ class PPOAgent():
 
         self.car_following_parameters = args.car_following_parameters #[1.2566, 1.5000, 0.9000]
         
-        
-        if self.nn_cbf_enabled:
-            self.barrier_optimizer_FV1 = barrier_optimizer(args.state_size_nncbf, args.hidden_size_nncbf, args.output_size_nncbf, 10000, args.Lf_FV1, args.Lg_FV1, args.gamma, args.cbf_tau, args.CAV_idx, args.FV1_idx, args.dt, args.lr_cbf, 512, args.device, args.car_following_parameters)
-            self.barrier_optimizer_FV2 = barrier_optimizer(args.state_size_nncbf, args.hidden_size_nncbf, args.output_size_nncbf, 10000, args.Lf_FV2, args.Lg_FV2, args.gamma, args.cbf_tau, args.CAV_idx, args.FV2_idx, args.dt, args.lr_cbf, 512, args.device, args.car_following_parameters)
-            self.cbf_tau = args.cbf_tau
-            if os.path.exists('model_parameters/FW_FV1_episode_500.pth'):
-                self.barrier_optimizer_FV1.compensator.load_state_dict(torch.load('model_parameters/FW_FV1_episode_500.pth'))
-                print('Load FV1 compensator successfully!')
-            if os.path.exists('model_parameters/FW_FV2_episode_500.pth'):
-                self.barrier_optimizer_FV2.compensator.load_state_dict(torch.load('model_parameters/FW_FV2_episode_500.pth'))
-                print('Load FV2 compensator successfully!')
 
         self.filt_1 = pa.filters.FilterRLS(3, mu=0.99, w = self.car_following_parameters)
         self.filt_2 = pa.filters.FilterRLS(3, mu=0.99, w = self.car_following_parameters)
@@ -202,13 +191,8 @@ class PPOAgent():
         tau = 0.3
         gamma = 1 
 
-        # If training or evaluating
-        if self.nn_cbf_enabled:
-            La_FV1 = self.barrier_optimizer_FV1.cal_La(s)
-            La_FV2 = self.barrier_optimizer_FV2.cal_La(s)
-        else:
-            La_FV1 = None
-            La_FV2 = None
+        La_FV1 = None
+        La_FV2 = None
 
         if self.SIDE_enabled:
             cf_saturation_FW1 = self.SIDE_FV1._get_disturbance_estimation(s)
