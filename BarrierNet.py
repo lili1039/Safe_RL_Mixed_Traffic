@@ -8,12 +8,22 @@ from qpth.qp import QPFunction, QPSolvers
 eps = 1e-7
 
 class BarrierLayer(nn.Module):
-    def __init__(self, states_size, car_following_parameters = [1.2566, 1.5000, 0.9000], safety_layer_no_grad = False, SIDE_enabled = False):
+    def __init__(self, states_size, car_following_parameters = [1.2566, 1.5000, 0.9000], safety_layer_no_grad = False, SIDE_enabled = False, num_vehicles = 4, s_star = 25, v_star = 20):
         super(BarrierLayer, self).__init__()
-        # Initialize the unused parameters
-        self.e = Variable(torch.Tensor())
+        # Equilibrium operating point (must match env reset spacing, reward & SI normalization)
+        self.s_star = s_star
+        self.v_star = v_star
+        # Empty equality-constraint placeholder. Double dtype to match the QP solve below,
+        # which runs in float64 for numerical accuracy (the QP is always feasible, so the
+        # float32 solver's "inaccurate/residual large" warnings were purely numerical).
+        self.e = Variable(torch.DoubleTensor())
         self.states_size = states_size
         self.following_veh = 2
+        # Velocity-block offset in the observation. The observation is laid out as
+        # [spacing(N), velocity(N), spacing_diff(N-1), velocity_diff(N-1)] with the head
+        # included, so observation index == physical vehicle index and the velocity of
+        # vehicle k lives at index k + num_vehicles.
+        self.vel_offset = num_vehicles
         if safety_layer_no_grad:
             self.gamma = torch.tensor([1.0,1.0,1.0])#2*torch.ones(self.following_veh + 1)
             self.k1 = torch.tensor([1.0])
@@ -27,12 +37,12 @@ class BarrierLayer(nn.Module):
 
         self.SIDE_enabled = SIDE_enabled
 
-    def forward(self, u_nominal, states, tau, gamma, CAV_index, La_FV1 = None, La_FV2 = None, Learning_CBF = False, acceleration = None, cf_saturation_FW1 = None, cf_saturation_FW2 = None):
+    def forward(self, u_nominal, states, tau, CAV_index, acceleration = None, cf_saturation_FW1 = None, cf_saturation_FW2 = None):
         
         # Safety ahead constraint
-        
-        v_star   = 15
-        s_star   = 20
+
+        v_star   = self.v_star
+        s_star   = self.s_star
         bias = 0.
         if_batch = states.dim() > 1 # check if batch
 
@@ -52,29 +62,25 @@ class BarrierLayer(nn.Module):
             #self.p [:,0] = -u_nominal.squeeze(1)
 
             # batch states
-            s_i, v_i = states[:, CAV_index], states[:, CAV_index+4]                               # CAV's spacing and velocity
-            s_im, v_im = states[:, CAV_index-1], states[:, CAV_index+4-1]           # CAV front vehicle's spacing and velocity
-            s_f_1, v_f_1 = states[:, CAV_index + 1], states[:, CAV_index+4+1]                               # following vehicle 1's spacing and velocity
-            s_f_im1, v_f_im1 = states[:, CAV_index], states[:, CAV_index+4]           # front vehicle's spacing and velocity
-            s_f_2, v_f_2 = states[:, CAV_index + 2], states[:, CAV_index+4+2]                               # following vehicle 2's spacing and velocity
-            s_f_im2, v_f_im2 = states[:, CAV_index + 1], states[:, CAV_index+4+1]           # front vehicle's spacing and velocity
+            off = self.vel_offset
+            s_i, v_i = states[:, CAV_index], states[:, CAV_index+off]                               # CAV's spacing and velocity
+            s_im, v_im = states[:, CAV_index-1], states[:, CAV_index+off-1]           # CAV front vehicle's spacing and velocity
+            s_f_1, v_f_1 = states[:, CAV_index + 1], states[:, CAV_index+off+1]                               # following vehicle 1's spacing and velocity
+            s_f_im1, v_f_im1 = states[:, CAV_index], states[:, CAV_index+off]           # front vehicle's spacing and velocity
+            s_f_2, v_f_2 = states[:, CAV_index + 2], states[:, CAV_index+off+2]                               # following vehicle 2's spacing and velocity
+            s_f_im2, v_f_im2 = states[:, CAV_index + 1], states[:, CAV_index+off+1]           # front vehicle's spacing and velocity
             
             s_i_ls = [s_i, s_f_1, s_f_2]
             v_i_ls = [v_i, v_f_1, v_f_2]
             v_im_ls = [v_im, v_f_im1, v_f_im2]
 
-            # batch lie derivatives
-            if Learning_CBF == False:
-                La_FV1 = torch.zeros(batch_size, 1)
-                La_FV2 = torch.zeros(batch_size, 1)
-            
             if self.SIDE_enabled == False:
                 cf_saturation_FW1 = torch.zeros(batch_size)
                 cf_saturation_FW2 = torch.zeros(batch_size)
 
             Lfh1 = (v_im_ls[0] - v_i_ls[0]).unsqueeze(1) #+ La_CAV.detach()
-            Lfh2 =(- v_im_ls[0] +  v_i_ls[0] + v_im_ls[1] - v_i_ls[1] - tau*(self.FW1_parameters[0]*(s_i_ls[1]-s_star) - self.FW1_parameters[1]*(v_i_ls[1]-v_star) + self.FW1_parameters[2]*(v_im_ls[1]-v_star) + cf_saturation_FW1)).unsqueeze(1) + La_FV1.detach()
-            Lfh3 =(- v_im_ls[0] +  v_i_ls[0] + v_im_ls[2] - v_i_ls[2] - tau*(self.FW2_parameters[0]*(s_i_ls[2]-s_star) - self.FW2_parameters[1]*(v_i_ls[2]-v_star) + self.FW2_parameters[2]*(v_im_ls[2]-v_star) + cf_saturation_FW2)).unsqueeze(1) + La_FV2.detach()
+            Lfh2 =(- v_im_ls[0] +  v_i_ls[0] + v_im_ls[1] - v_i_ls[1] - tau*(self.FW1_parameters[0]*(s_i_ls[1]-s_star) - self.FW1_parameters[1]*(v_i_ls[1]-v_star) + self.FW1_parameters[2]*(v_im_ls[1]-v_star) + cf_saturation_FW1)).unsqueeze(1)
+            Lfh3 =(- v_im_ls[0] +  v_i_ls[0] + v_im_ls[2] - v_i_ls[2] - tau*(self.FW2_parameters[0]*(s_i_ls[2]-s_star) - self.FW2_parameters[1]*(v_i_ls[2]-v_star) + self.FW2_parameters[2]*(v_im_ls[2]-v_star) + cf_saturation_FW2)).unsqueeze(1)
             Lfh_ls = torch.hstack([Lfh1, Lfh2, Lfh3])
             Lgh_ls = torch.hstack([-tau * torch.ones(batch_size,1), tau * torch.ones(batch_size,1), tau * torch.ones(batch_size,1)]) #Lb_CAV.detach()
             #Lfh = (v_im - v_i).unsqueeze(1) #+ La.detach()
@@ -89,7 +95,7 @@ class BarrierLayer(nn.Module):
             # Feasible acceleration constraint
             if acceleration is not None:
                 u_min = -5
-                control_bound = acceleration[:, CAV_index - 1 + 1] + self.k1*(v_im_ls[0] - v_i_ls[0] - tau*u_min) - u_nominal.squeeze()
+                control_bound = acceleration[:, CAV_index - 1] + self.k1*(v_im_ls[0] - v_i_ls[0] - tau*u_min) - u_nominal.squeeze()
                 # control_bound = 10000*torch.ones(batch_size)
 
             # batch G matrix
@@ -109,9 +115,14 @@ class BarrierLayer(nn.Module):
             self.h[:,self.following_veh+1] = control_bound
             
             # print(self.Q, self.p, self.G, self.h)
-            # calculate the CBF constraint with QP solvers in batch
-            u_ = QPFunction()(self.Q.float(), self.p.float(),
-                            self.G.float(), self.h.float(), self.e, self.e).float()
+            # calculate the CBF constraint with QP solvers in batch (solve in float64,
+            # cast the solution back to float32 for the rest of the network).
+            # eps=1e-8 is an achievable, sensible tolerance: it is far below the float32
+            # output resolution (~1e-7) so the solution is numerically identical, while
+            # avoiding qpth's unreachable default eps=1e-12 that produced spurious
+            # "inaccurate solution / residual large" warnings on ill-conditioned instances.
+            u_ = QPFunction(eps=1e-8, maxIter=50, verbose=-1)(self.Q.double(), self.p.double(),
+                            self.G.double(), self.h.double(), self.e, self.e).float()
 
             # return the first column of the solution
             return u_[:,0].unsqueeze(1)
@@ -130,20 +141,17 @@ class BarrierLayer(nn.Module):
             # self.p [0] = -u_nominal[0]
 
             # states
-            s_i, v_i = states[CAV_index], states[CAV_index+4]                               # CAV's spacing and velocity
-            s_im, v_im = states[CAV_index-1], states[CAV_index+4-1]           # CAV front vehicle's spacing and velocity
-            s_f_1, v_f_1 = states[CAV_index + 1], states[CAV_index+4+1]                               # following vehicle 1's spacing and velocity
-            s_f_im1, v_f_im1 = states[CAV_index], states[CAV_index+4]           # front vehicle's spacing and velocity
-            s_f_2, v_f_2 = states[CAV_index + 2], states[CAV_index+4+2]                               # following vehicle 2's spacing and velocity
-            s_f_im2, v_f_im2 = states[CAV_index + 1], states[CAV_index+4+1]           # front vehicle's spacing and velocity
+            off = self.vel_offset
+            s_i, v_i = states[CAV_index], states[CAV_index+off]                               # CAV's spacing and velocity
+            s_im, v_im = states[CAV_index-1], states[CAV_index+off-1]           # CAV front vehicle's spacing and velocity
+            s_f_1, v_f_1 = states[CAV_index + 1], states[CAV_index+off+1]                               # following vehicle 1's spacing and velocity
+            s_f_im1, v_f_im1 = states[CAV_index], states[CAV_index+off]           # front vehicle's spacing and velocity
+            s_f_2, v_f_2 = states[CAV_index + 2], states[CAV_index+off+2]                               # following vehicle 2's spacing and velocity
+            s_f_im2, v_f_im2 = states[CAV_index + 1], states[CAV_index+off+1]           # front vehicle's spacing and velocity
 
             s_i_ls = [s_i, s_f_1, s_f_2]
             v_i_ls = [v_i, v_f_1, v_f_2]
             v_im_ls = [v_im, v_f_im1, v_f_im2]
-
-            if Learning_CBF == False:
-                La_FV1 = torch.tensor(0)
-                La_FV2 = torch.tensor(0)
 
             if self.SIDE_enabled == False:
                 cf_saturation_FW1 = torch.zeros(0)
@@ -151,15 +159,15 @@ class BarrierLayer(nn.Module):
 
             # lie derivatives
             Lfh1 = (v_im_ls[0] - v_i_ls[0])
-            Lfh2 =(- v_im_ls[0] +  v_i_ls[0] + v_im_ls[1] - v_i_ls[1] - tau*(self.car_following_parameters[0]*(s_i_ls[1]-s_star) - self.car_following_parameters[1]*(v_i_ls[1]-v_star) + self.car_following_parameters[2]*(v_im_ls[1]-v_star) + cf_saturation_FW1)) + La_FV1.detach()
-            Lfh3 =(- v_im_ls[0] +  v_i_ls[0] + v_im_ls[2] - v_i_ls[2] - tau*(self.car_following_parameters[0]*(s_i_ls[2]-s_star) - self.car_following_parameters[1]*(v_i_ls[2]-v_star) + self.car_following_parameters[2]*(v_im_ls[2]-v_star) + cf_saturation_FW2)) + La_FV2.detach()
+            Lfh2 =(- v_im_ls[0] +  v_i_ls[0] + v_im_ls[1] - v_i_ls[1] - tau*(self.FW1_parameters[0]*(s_i_ls[1]-s_star) - self.FW1_parameters[1]*(v_i_ls[1]-v_star) + self.FW1_parameters[2]*(v_im_ls[1]-v_star) + cf_saturation_FW1))
+            Lfh3 =(- v_im_ls[0] +  v_i_ls[0] + v_im_ls[2] - v_i_ls[2] - tau*(self.FW2_parameters[0]*(s_i_ls[2]-s_star) - self.FW2_parameters[1]*(v_i_ls[2]-v_star) + self.FW2_parameters[2]*(v_im_ls[2]-v_star) + cf_saturation_FW2))
             Lfh_ls = torch.hstack([Lfh1, Lfh2, Lfh3])
             Lgh_ls = torch.tensor([-tau, tau, tau])
 
             # Feasible acceleration constraint
             if acceleration is not None:
                 u_min = -5
-                control_bound = acceleration[CAV_index - 1 + 1] + self.k1*(v_im_ls[0] - v_i_ls[0] - tau*u_min) - u_nominal
+                control_bound = acceleration[CAV_index - 1] + self.k1*(v_im_ls[0] - v_i_ls[0] - tau*u_min) - u_nominal
                 # control_bound = 10000*torch.ones(1)
 
             alpha_h_1 = (self.gamma[0]*(s_i - tau * v_i).pow(1) - bias)
@@ -181,9 +189,12 @@ class BarrierLayer(nn.Module):
             self.h[0:self.following_veh+1] = self.cbf_h
             self.h[self.following_veh+1] = control_bound
 
-            # calculate the CBF constraint with QP solvers
-            u_ = QPFunction()(self.Q.float(), self.p.float(),
-                            self.G.float(), self.h.float(), self.e, self.e).float()
+            # calculate the CBF constraint with QP solvers (solve in float64,
+            # cast the solution back to float32 for the rest of the network).
+            # eps=1e-8: achievable tolerance below the float32 output resolution; avoids
+            # qpth's unreachable default eps=1e-12 (spurious "residual large" warnings).
+            u_ = QPFunction(eps=1e-8, maxIter=50, verbose=-1)(self.Q.double(), self.p.double(),
+                            self.G.double(), self.h.double(), self.e, self.e).float()
             # return the first column of the solution
             return u_[:,0]
 
@@ -195,9 +206,8 @@ if __name__ == "__main__":
     u_nominal = torch.tensor([[3],[4]])
     u_nominal = torch.tensor([4])
     tau = 0.3
-    gamma = 1
     BN_model = BarrierLayer(8)
-    output = BN_model(u_nominal, x, tau, gamma, CAV_index)
+    output = BN_model(u_nominal, x, tau, CAV_index)
     print(output.size())
     print(u_nominal.size())
     print(output + u_nominal)

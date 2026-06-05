@@ -1,62 +1,102 @@
+import argparse
 import numpy as np
 import random
 from collections import deque, namedtuple
 import torch
 
-class ReplayBuffer:
-    def __init__(self, buffer_size=int(1e5), batch_size=64):
-        # Initialize a ReplayBuffer object (for ddpg).
-        self.memory = deque(maxlen=buffer_size)
-        self.batch_size = batch_size
-        self.experience = namedtuple("Experience", field_names=["state", "action", "action_safe", "reward", "next_state", "done"])
 
-    def add(self, state, action, action_safe, reward, next_state, done):
-        # Add a new experience to memory.
-        e = self.experience(state, action, action_safe, reward, next_state, done)
-        self.memory.append(e)
+def str2bool(v):
+    """argparse type that actually parses booleans.
 
-    def sample(self, batch_size=None):
-        # Randomly sample a batch of experiences from memory.
-        if batch_size is None:
-            batch_size = self.batch_size
-        experiences = random.sample(self.memory, k=batch_size)
-        states = torch.from_numpy(np.vstack([e.state for e in experiences])).float()
-        actions = torch.from_numpy(np.vstack([e.action for e in experiences])).float()
-        actions_safe = torch.from_numpy(np.vstack([e.action_safe for e in experiences])).float()
-        rewards = torch.from_numpy(np.vstack([e.reward for e in experiences])).float()
-        next_states = torch.from_numpy(np.vstack([e.next_state for e in experiences])).float()
-        dones = torch.from_numpy(np.vstack([e.done for e in experiences]).astype(np.uint8)).float()
-        return (states, actions, actions_safe, rewards, next_states, dones)
+    The plain `type=bool` argument is a trap: bool("False") is True, so
+    `--flag False` silently enables the flag. Use this instead, e.g.
+    `parser.add_argument("--flag", type=str2bool, nargs='?', const=True, default=...)`.
+    """
+    if isinstance(v, bool):
+        return v
+    if v.lower() in ("true", "t", "1", "yes", "y"):
+        return True
+    if v.lower() in ("false", "f", "0", "no", "n"):
+        return False
+    raise argparse.ArgumentTypeError(f"Boolean value expected, got '{v}'")
 
-    def __len__(self):
-        return len(self.memory)
 
-class ReplayBuffer_Compensator:
-    def __init__(self, buffer_size=int(1e5), batch_size=64):
-        # Initialize a ReplayBuffer object (for Compensator).
-        self.memory = deque(maxlen=buffer_size)
-        self.batch_size = batch_size
-        self.experience = namedtuple("Experience", field_names=["state", "control_input", "h_derivative_true", "Lf"])
+class RunningMeanStd:
+    """Online (Welford) mean/std estimator."""
 
-    def add(self, state, control_input, h_derivative_true, Lf):
-        # Add a new experience to memory.
-        e = self.experience(state, control_input, h_derivative_true, Lf)
-        self.memory.append(e)
+    def __init__(self, shape):
+        self.n = 0
+        self.mean = np.zeros(shape)
+        self.S = np.zeros(shape)
+        self.std = np.sqrt(self.S)
 
-    def sample(self, batch_size=None):
-        # Randomly sample a batch of experiences from memory.
-        if batch_size is None:
-            batch_size = self.batch_size
-        experiences = random.sample(self.memory, k=batch_size)
-        states = torch.from_numpy(np.vstack([e.state for e in experiences])).float()
-        control_input = torch.from_numpy(np.vstack([e.control_input for e in experiences])).float()
-        h_derivative_true = torch.from_numpy(np.vstack([e.h_derivative_true for e in experiences])).float()
-        Lf = torch.from_numpy(np.vstack([e.Lf for e in experiences])).float()
+    def update(self, x):
+        x = np.array(x)
+        self.n += 1
+        if self.n == 1:
+            self.mean = x
+            self.std = x
+        else:
+            old_mean = self.mean.copy()
+            self.mean = old_mean + (x - old_mean) / self.n
+            self.S = self.S + (x - old_mean) * (x - self.mean)
+            self.std = np.sqrt(self.S / self.n)
 
-        return (states, control_input, h_derivative_true, Lf)
 
-    def __len__(self):
-        return len(self.memory)
+def equilibrium_state_stats(num_vehicles, s_star, v_star,
+                            spacing_scale=10.0, velocity_scale=5.0,
+                            spacing_diff_scale=5.0, velocity_diff_scale=5.0):
+    """Fixed mean/std vectors for normalizing the platoon observation.
+
+    The observation (head-inclusive layout) is
+    ``[spacing(N), velocity(N), spacing_diff(N-1), velocity_diff(N-1)]``.
+    Raw spacing (~25-50) and velocity (~20) saturate the actor/critic ``tanh``
+    first layer, killing gradients. We centre spacing at ``s_star`` and velocity
+    at ``v_star`` (differences at 0) and divide by a fixed scale so the network
+    sees ~unit-magnitude inputs.
+
+    A *fixed* affine transform is used (not running stats) because: (1) the
+    operating point is known, so centring is principled; (2) it is stateless, so
+    collection / PPO updates / evaluation all see the identical mapping; and
+    (3) the safety layer still needs the RAW state, so normalization must be
+    applied only to the MLP path inside the network, where a fixed buffer is the
+    cleanest fit.
+
+    Returns ``(mean, std)`` float32 arrays of length ``4*N - 2``.
+    """
+    n = num_vehicles
+    mean = np.concatenate([
+        np.full(n, s_star), np.full(n, v_star),
+        np.zeros(n - 1), np.zeros(n - 1),
+    ]).astype(np.float32)
+    std = np.concatenate([
+        np.full(n, spacing_scale), np.full(n, velocity_scale),
+        np.full(n - 1, spacing_diff_scale), np.full(n - 1, velocity_diff_scale),
+    ]).astype(np.float32)
+    return mean, std
+
+
+class RewardScaling:
+    """PPO reward scaling: divide reward by the running std of the discounted
+    return (no mean subtraction). Keeps value targets / advantages at ~unit scale
+    so occasional huge-magnitude episodes don't destabilise the critic.
+
+    Call once per environment step; call reset() at the end of each episode.
+    """
+
+    def __init__(self, shape, gamma):
+        self.shape = shape
+        self.gamma = gamma
+        self.running_ms = RunningMeanStd(shape=self.shape)
+        self.R = np.zeros(self.shape)
+
+    def __call__(self, x):
+        self.R = self.gamma * self.R + x
+        self.running_ms.update(self.R)
+        return x / (self.running_ms.std + 1e-8)  # only divide by std
+
+    def reset(self):
+        self.R = np.zeros(self.shape)
 
 
 class ReplayBuffer_PPO:
@@ -92,7 +132,8 @@ class ReplayBuffer_PPO:
         done = torch.tensor(self.done, dtype=torch.float)
         acceleration = torch.tensor(self.acceleration, dtype=torch.float)
         return state, action, action_logprob, reward, state_, done, acceleration
-    
+
+
 class ReplayBuffer_SIDE:
     def __init__(self, buffer_size=int(1e5), batch_size=64):
         # Initialize a ReplayBuffer object (for SIDE).
@@ -116,32 +157,3 @@ class ReplayBuffer_SIDE:
         actions = torch.from_numpy(np.vstack([e.action for e in experiences])).float()
         next_states = torch.from_numpy(np.vstack([e.next_state for e in experiences])).float()
         return (states, actions, next_states)
-
-class OUNoise:
-    def __init__(self, action_size, mu=0.0, theta=0.15, sigma=0.2):
-        # Initialize parameters and noise process.
-        self.action_size = action_size
-        self.mu = mu
-        self.theta = theta
-        self.sigma = sigma
-        self.state = np.ones(self.action_size) * self.mu
-        self.reset()
-
-    def sample(self):
-        # Update internal state and return it as a noise sample.
-        x = self.state
-        dx = self.theta * (self.mu - x) + self.sigma * np.random.randn(len(x))
-        self.state = x + dx
-        return self.state
-
-    def reset(self):
-        # Reset the internal state (= noise) to mean (mu).
-        self.state = np.ones(self.action_size) * self.mu
-
-def to_numpy(x):
-    # convert torch tensor to numpy array
-    return x.cpu().detach().double().numpy()
-
-def to_tensor(x, dtype, device, requires_grad=False):
-    # convert numpy array to torch tensor
-    return torch.from_numpy(x).type(dtype).to(device).requires_grad_(requires_grad)

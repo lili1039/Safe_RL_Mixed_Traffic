@@ -1,0 +1,30 @@
+{
+  "env": {
+    "MPLBACKEND": "Agg"
+  },
+  "permissions": {
+    "allow": [
+      "PowerShell(conda run -n python310 python main.py *)",
+      "PowerShell($env:WANDB_MODE='offline'; conda run -n python310 python main.py *)",
+      "PowerShell($env:WANDB_MODE='online'; conda run -n python310 python main.py *)",
+      "PowerShell(conda run -n python310 python _eval.py *)",
+      "PowerShell(conda run -n python310 python make_figures.py *)",
+      "PowerShell(conda run -n python310 python SI_pretrain.py *)",
+      "PowerShell($env:MPLBACKEND='Agg'; $env:WANDB_MODE='offline'; conda run -n python310 python main.py --num_episodes 300 --eval_freq 10 --eval_episodes 6 --SIDE_load true --seed 0 --run_name A_full_pretrainSI)",
+      "PowerShell($env:MPLBACKEND='Agg'; $env:WANDB_MODE='offline'; conda run -n python310 python main.py --is_state_norm false --safety_layer_enabled false --SIDE_enabled false --SIDE_update false --num_episodes 300 --eval_freq 10 --eval_episodes 6 --seed 0 --run_name D_noStateNorm_noSafety)",
+      "Bash(awk 'NR%3==1 || NR>27')",
+      "PowerShell($env:MPLBACKEND='Agg'; $env:WANDB_MODE='offline'; conda run -n python310 python main.py --s_star 50 --v_star 20 --velocity_noise 2.0 --is_state_norm false --safety_layer_enabled false --SIDE_enabled false --SIDE_update false --num_episodes 300 --eval_freq 10 --eval_episodes 6 --seed 0 --run_name E_originalOperatingPoint)",
+      "Bash(awk '{s+=$1} END{print s/NR}')",
+      "PowerShell($env:MPLBACKEND='Agg'; $env:WANDB_MODE='offline'; conda run -n python310 python main.py --safety_double_apply true --num_episodes 150 --eval_freq 10 --eval_episodes 6 --SIDE_load true --seed 0 --run_name C_doubleApply)",
+      "PowerShell($env:MPLBACKEND='Agg'; $env:WANDB_MODE='offline'; conda run -n python310 python main.py --train_scenario -1 --eval_scenario 0 --num_episodes 300 --eval_freq 10 --eval_episodes 6 --SIDE_load true --seed 0 --run_name F_mixedScenario)",
+      "Bash(which jq *)",
+      "Read(//c/Users/13373/.claude/projects/**)",
+      "PowerShell(conda run -n python310 python _smoke2.py)",
+      "PowerShell(conda run -n python310 python SI_pretrain.py --collect_pure_idm --collect_episodes 50 --epochs 500 --print_every 100 --output_dir model_parameters)",
+      "PowerShell($env:MPLBACKEND='Agg'; $env:WANDB_MODE='offline'; conda run -n python310 python main.py --train_scenario -1 --domain_randomize true --reward_clip 15 --brake_accel 5 --accel_mag 1 --num_episodes 200 --eval_freq 20 --eval_episodes 3 --SIDE_load true --seed 0 --run_name G1_mixed_clip15_lr3e4)",
+      "PowerShell(conda run -n python310 python _eval.py --ckpt_dir model_parameters/runG1_final --episode 200 --eval_episodes 6)",
+      "PowerShell($env:MPLBACKEND='Agg'; $env:WANDB_MODE='offline'; conda run -n python310 python main.py --train_scenario -1 --domain_randomize true --reward_clip 15 --brake_accel 5 --accel_mag 1 --lr_a 1e-4 --lr_c 1e-4 --num_episodes 200 --eval_freq 20 --eval_episodes 3 --SIDE_load true --seed 0 --run_name G2_mixed_lr1e4)",
+      "PowerShell($env:MPLBACKEND='Agg'; conda run -n python310 python make_figures.py --ckpt_dir model_parameters/runG1_final --episode 200 --prefix G1)"
+    ]
+  }
+}

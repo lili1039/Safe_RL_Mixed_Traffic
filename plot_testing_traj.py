@@ -15,31 +15,32 @@ def read_data(filename):
 vis_hx = True
 tau = 0.3
 
-for scenario in [2,3,4]:
-    data_w_safety_layer = read_data('results\ppo_test_rl_traj_no_nn_cbf_scenario_'+str(scenario)+'_SI_enabled_True.npy')
-    data_w_safety_layer_wo_si = read_data('results\ppo_test_rl_traj_no_nn_cbf_scenario_'+str(scenario)+'_SI_enabled_False.npy')
-    data_wo_safety_layer = read_data('results\ppo_test_rl_traj_no_safe_scenario_'+str(scenario)+'.npy')
+for scenario in [2,3]:
+    data_w_safety_layer = read_data('results/ppo_test_rl_traj_scenario_'+str(scenario)+'_SI_enabled_True.npy')
+    data_w_safety_layer_wo_si = read_data('results/ppo_test_rl_traj_scenario_'+str(scenario)+'_SI_enabled_False.npy')
+    data_wo_safety_layer = read_data('results/ppo_test_rl_traj_no_safe_scenario_'+str(scenario)+'.npy')
     data_pure_car_following = read_data('results\\test_cf_traj_scenario_'+str(scenario)+'.npy')
-    # results\test_cf_traj_scenario_4.npy
-    if scenario == 1 or scenario == 4:
-        spacing_w_safety_layer = data_w_safety_layer[:,5+2]
-        # spacing_w_safety_layer_wo_si = data_w_safety_layer_wo_si[:,5+2]
-        spacing_wo_safety_layer = data_wo_safety_layer[:,5+2]
-        spacing_pure_car_following = data_pure_car_following[:,5+2]
+    if scenario == 2:
+        spacing_w_safety_layer = data_w_safety_layer[:,4+2]
+        spacing_w_safety_layer_wo_si = data_w_safety_layer_wo_si[:,4+2]
+        spacing_wo_safety_layer = data_wo_safety_layer[:,4+2]
+        spacing_pure_car_following = data_pure_car_following[:,4+2]
 
         velocity_w_safety_layer = data_w_safety_layer[:,2]
+        velocity_w_safety_layer_wo_si = data_w_safety_layer_wo_si[:,2]
         velocity_wo_safety_layer = data_wo_safety_layer[:,2]
         velocity_pure_car_following = data_pure_car_following[:,2]
 
         hx_w_safety_layer = spacing_w_safety_layer - velocity_w_safety_layer*tau
+        hx_w_safety_layer_wo_si = spacing_w_safety_layer_wo_si - velocity_w_safety_layer_wo_si*tau
         hx_wo_safety_layer = spacing_wo_safety_layer - velocity_wo_safety_layer*tau
         hx_pure_car_following = spacing_pure_car_following - velocity_pure_car_following*tau
 
-    elif scenario == 2:
-        spacing_w_safety_layer = data_w_safety_layer[:,5+3]
-        spacing_w_safety_layer_wo_si = data_w_safety_layer_wo_si[:,5+3]
-        spacing_wo_safety_layer = data_wo_safety_layer[:,5+3]
-        spacing_pure_car_following = data_pure_car_following[:,5+3]
+    elif scenario == 3:
+        spacing_w_safety_layer = data_w_safety_layer[:,4+3]
+        spacing_w_safety_layer_wo_si = data_w_safety_layer_wo_si[:,4+3]
+        spacing_wo_safety_layer = data_wo_safety_layer[:,4+3]
+        spacing_pure_car_following = data_pure_car_following[:,4+3]
 
         velocity_w_safety_layer = data_w_safety_layer[:,3]
         velocity_w_safety_layer_wo_si = data_w_safety_layer_wo_si[:,3]
@@ -51,23 +52,7 @@ for scenario in [2,3,4]:
         hx_wo_safety_layer = spacing_wo_safety_layer - velocity_wo_safety_layer*tau
         hx_pure_car_following = spacing_pure_car_following - velocity_pure_car_following*tau
 
-    elif scenario == 3:
-        spacing_w_safety_layer = data_w_safety_layer[:,5+4]
-        spacing_w_safety_layer_wo_si = data_w_safety_layer_wo_si[:,5+4]
-        spacing_wo_safety_layer = data_wo_safety_layer[:,5+4]
-        spacing_pure_car_following = data_pure_car_following[:,5+4]
-
-        velocity_w_safety_layer = data_w_safety_layer[:,4]
-        velocity_w_safety_layer_wo_si = data_w_safety_layer_wo_si[:,4]
-        velocity_wo_safety_layer = data_wo_safety_layer[:,4]
-        velocity_pure_car_following = data_pure_car_following[:,4]
-
-        hx_w_safety_layer = spacing_w_safety_layer - velocity_w_safety_layer*tau
-        hx_w_safety_layer_wo_si = spacing_w_safety_layer_wo_si - velocity_w_safety_layer_wo_si*tau
-        hx_wo_safety_layer = spacing_wo_safety_layer - velocity_wo_safety_layer*tau
-        hx_pure_car_following = spacing_pure_car_following - velocity_pure_car_following*tau
-
-    time_step = np.arange(0,len(spacing_w_safety_layer)*0.1,0.1)
+    time_step = np.arange(0,len(spacing_w_safety_layer)*0.12,0.12)
 
     plt.figure(scenario, figsize=(10, 8))
     plt.plot(time_step,spacing_w_safety_layer, label='with safety layer',alpha=0.5)
@@ -86,7 +71,7 @@ for scenario in [2,3,4]:
     plt.yticks(fontproperties = 'Times New Roman', size = 25)
     plt.xticks(fontproperties = 'Times New Roman', size = 25)
 
-    plt.savefig('results\spacing_scenario_'+str(scenario)+'.pdf', dpi = 300)
+    plt.savefig('results/spacing_scenario_'+str(scenario)+'.pdf', dpi = 300)
     
     if vis_hx:
         plt.figure(scenario+10, figsize=(10, 8))
@@ -100,8 +85,6 @@ for scenario in [2,3,4]:
             plt.ylabel('h$_{th,'+str(3)+'}(x)$', fontdict={'family' : 'Times New Roman', 'size'   : 27})
         elif scenario == 3:
             plt.ylabel('h$_{th,'+str(4)+'}(x)$', fontdict={'family' : 'Times New Roman', 'size'   : 27})
-        elif scenario == 4:
-            plt.ylabel('h$_{th,'+str(2)+'}(x)$', fontdict={'family' : 'Times New Roman', 'size'   : 27})
         # plt.legend(['with safety layer', 'with safety layer w\o SI', 'w\o safety layer', 'pure car following'])
         plt.legend(frameon=False, prop={'family' : 'Times New Roman', 'size'   : 25})
         plt.grid(True)
@@ -109,4 +92,4 @@ for scenario in [2,3,4]:
         plt.yticks(fontproperties = 'Times New Roman', size = 25)
         plt.xticks(fontproperties = 'Times New Roman', size = 25)
 
-        plt.savefig('results\hx_scenario_'+str(scenario)+'.pdf', dpi = 300)
+        plt.savefig('results/hx_scenario_'+str(scenario)+'.pdf', dpi = 300)

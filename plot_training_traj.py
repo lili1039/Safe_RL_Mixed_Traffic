@@ -23,20 +23,20 @@ def plot_training_data_seperate(agent_select, safety_layer_enabled):
         spacing_data_pd = pd.read_csv('training_traj/spacing_data_no_safety_' + agent_select + '.csv', index_col=False)
 
     # Convert the data to numpy array
-    velocity_data = velocity_data_pd[['0','1','2','3','4']].to_numpy()
-    spacing_data = spacing_data_pd[['0','1','2','3','4']].to_numpy()
+    velocity_data = velocity_data_pd[['0','1','2','3']].to_numpy()
+    spacing_data = spacing_data_pd[['0','1','2','3']].to_numpy()
 
     # Plot the data
     if safety_layer_enabled:
         path = 'training_traj/episode_rewards_' + agent_select + '.png'
         plot_rewards(episode_rewards_pd, window_size=1, save_path=path)
-        for veh_id in range(5):
+        for veh_id in range(4):
             path = 'training_traj/vehicl_' + agent_select + '_'+str(veh_id)+'.png'
             plot_velocity_and_spacing(velocity_data[:,veh_id], spacing_data[:,veh_id ], veh_id = veh_id, save_path=path)
     else:
         path = 'training_traj/episode_rewards_' + agent_select + '_no_safety.png'
         plot_rewards(episode_rewards_pd, window_size=1, save_path=path)
-        for veh_id in range(5):
+        for veh_id in range(4):
             path = 'training_traj/vehicle_' + agent_select + '_'+str(veh_id)+'_no_safety.png'
             plot_velocity_and_spacing(velocity_data[:,veh_id], spacing_data[:,veh_id ], veh_id = veh_id, save_path=path)
 

@@ -1,137 +1,89 @@
-import numpy as np
-import matplotlib.pyplot as plt
-import numpy as np
-import matplotlib.animation as animation
-from platoon_env import PlatoonEnv
-from ppo_agent import PPOAgent
-import torch
 import argparse
-import torch.nn as nn
-import torch.nn.functional as F
-from NN_SI import NN_SI_DE_Module, OVM_Estimator, Disturbance_Estimator
 import random
-from torch.optim.lr_scheduler import LinearLR
+from pathlib import Path
+
+import numpy as np
+import torch
+import torch.nn.functional as F
 import torch.utils.data as Data
-from sklearn.preprocessing import MinMaxScaler, StandardScaler
 
-class FC(nn.Module):
-    def __init__(self, state_num):
-        super(FC,self).__init__()
-        self.fc1 = nn.Linear(state_num, 50)
-        self.fc2 = nn.Linear(50, 100)
-        self.fc3 = nn.Linear(100, 50)
-        self.fc4 = nn.Linear(50, 1)
-        self.tanh = nn.Tanh()
-        self.ReLU = nn.ReLU()
-        
-    def forward(self,x):
-        if x.dim() == 1:
-            x = x.unsqueeze(0)
-        x = self.tanh(self.fc1(x))
-        x = self.tanh(self.fc2(x))
-        x = self.tanh(self.fc3(x))
-        x = self.fc4(x)
-        return x
+from NN_SI import NN_SI_DE_Module
+from utils import str2bool
 
-def load_pretrain_model_and_test():
-    # Create the environment
-    max_timesteps = 10000
-    env = PlatoonEnv(max_steps=max_timesteps)
-    # Set the device
-    device = 'cpu' #'cuda' if torch.cuda.is_available() else 'cpu'
-    # Set the safety layer
-    safety_layer_enabled = True
-    safety_layer_no_grad = False
-    nn_cbf_enabled = False
-    nn_cbf_update = False
-    # Select the agent
-    agent_select = 'ppo'
-    # Set if train the agent
-    agent_train = False
-    # Set if update the filter
-    filter_update = False
-    # Set if update the SIDE
-    SIDE_update = False
-    SIDE_enabled = True
 
-    parser = argparse.ArgumentParser("Hyperparameters Setting for PPO")
-    parser.add_argument("--max_train_steps", type=int, default=int(3e6), help=" Maximum number of training steps")
-    parser.add_argument("--evaluate_freq", type=float, default=5e3, help="Evaluate the policy every 'evaluate_freq' steps")
-    parser.add_argument("--save_freq", type=int, default=20, help="Save frequency")
-    parser.add_argument("--batch_size", type=int, default=2048, help="Batch size")
-    parser.add_argument("--mini_batch_size", type=int, default=64, help="Minibatch size")
-    parser.add_argument("--hidden_width", type=int, default=64, help="The number of neurons in hidden layers of the neural network")
-    parser.add_argument("--lr_a", type=float, default=3e-4, help="Learning rate of actor")
-    parser.add_argument("--lr_c", type=float, default=3e-4, help="Learning rate of critic")
-    parser.add_argument("--gamma", type=float, default=0.99, help="Discount factor")
-    parser.add_argument("--lamda", type=float, default=0.95, help="GAE parameter")
-    parser.add_argument("--epsilon", type=float, default=0.2, help="PPO clip parameter")
-    parser.add_argument("--K_epochs", type=int, default=10, help="PPO parameter")
-    parser.add_argument("--is_adv_norm", type=bool, default=True, help="Advantage normalization")
-    parser.add_argument("--is_state_norm", type=bool, default=True, help="State normalization")
-    parser.add_argument("--is_reward_norm", type=bool, default=False, help="Reward normalization")
-    parser.add_argument("--is_reward_scaling", type=bool, default=True, help="Reward scaling")
-    parser.add_argument("--entropy_coef", type=float, default=0.01, help="Policy entropy")
-    parser.add_argument("--is_lr_decay", type=bool, default=True, help="Learning rate Decay")
-    parser.add_argument("--is_grad_clip", type=bool, default=True, help="Gradient clip")
-    parser.add_argument("--is_orthogonal_init", type=bool, default=True, help="Orthogonal initialization")
-    parser.add_argument("--adam_eps", type=float, default=True, help="Set Adam epsilon=1e-5")
-    parser.add_argument("--is_tanh", type=float, default=True, help="Tanh activation function")
-    parser.add_argument("--safety_layer_enabled", type=bool, default=safety_layer_enabled, help="Safety layer enabled or not")
-    parser.add_argument("--nn_cbf_enabled", type=bool, default = nn_cbf_enabled, help="NN dynamics enabled or not")
-    parser.add_argument("--cbf_tau", type=float, default=0.3, help="CAV index in the platoon")
-    parser.add_argument("--cbf_gamma", type=float, default=2, help="CAV index in the platoon")
-    parser.add_argument("--CAV_index", type=float, default=1, help="CAV index in the platoon")
-    parser.add_argument("--CAV_idx", type=float, default=1, help="CAV index in the platoon")
-    parser.add_argument("--FV1_idx", type=float, default=2, help="CAV index in the platoon")
-    parser.add_argument("--FV2_idx", type=float, default=3, help="CAV index in the platoon")
-    parser.add_argument("--Lf_CAV", type=float, default=0.5, help="CAV index in the platoon")
-    parser.add_argument("--Lg_CAV", type=float, default=0.5, help="CAV index in the platoon")
-    parser.add_argument("--Lf_FV1", type=float, default=0.5, help="CAV index in the platoon")
-    parser.add_argument("--Lg_FV1", type=float, default=0.5, help="CAV index in the platoon")
-    parser.add_argument("--Lf_FV2", type=float, default=0.5, help="CAV index in the platoon")
-    parser.add_argument("--Lg_FV2", type=float, default=0.5, help="CAV index in the platoon") 
-    parser.add_argument("--dt", type=float, default=0.1, help="CAV index in the platoon")
-    parser.add_argument("--lr_cbf", type=float, default=1e-4, help="CAV index in the platoon")
-    parser.add_argument("--state_size_nncbf", type=float, default=4, help="CAV index in the platoon")
-    parser.add_argument("--hidden_size_nncbf", type=float, default=128, help="CAV index in the platoon")
-    parser.add_argument("--output_size_nncbf", type=float, default=1, help="CAV index in the platoon")
-    parser.add_argument("--safety_layer_no_grad", type=bool, default=safety_layer_no_grad, help="CAV index in the platoon")
-    parser.add_argument("--car_following_parameters", type=list, default=[0.5,0.5,0.5], help="car following parameters initialized") #[1.2566, 1.5000, 0.9000]
-    parser.add_argument("--nn_cbf_update",type=bool, default=nn_cbf_update, help="NN dynamics online update enabled or not")
-    parser.add_argument("--num_episodes",type=int, default = 500, help="number of training episodes")
-    parser.add_argument("--vehicle_num",type=int, default = 5, help="number of vehicles in the platoon")
-    parser.add_argument("--filter_update", type=bool, default=filter_update, help="filter update enabled or not")
-    parser.add_argument("--SIDE_update", type=bool, default=SIDE_update, help="SIDE update enabled or not")
-    parser.add_argument("--lr_cf", type=float, default=1e-4, help="SI learning rate")
-    parser.add_argument("--lr_de", type=float, default=1e-4, help="DE learning rate")
-    parser.add_argument("--batch_size_SIDE", type=int, default=256, help="SIDE batch size")
-    parser.add_argument("--buffer_size_SIDE", type=int, default=10000, help="SIDE buffer size")
-    parser.add_argument("--SIDE_enabled", type=bool, default=SIDE_enabled, help="SIDE enabled or not")
-    args = parser.parse_args()
+BASE_DIR = Path(__file__).resolve().parent
+DATA_DIR = BASE_DIR / "SI_pretrain"
+MODEL_DIR = BASE_DIR / "model_parameters"
+
+
+def build_ppo_args(env, device, side_load=True):
+    args = argparse.Namespace()
+    args.max_train_steps = int(3e6)
+    args.evaluate_freq = 5e3
+    args.save_freq = 20
+    args.batch_size = 2048
+    args.mini_batch_size = 64
+    args.hidden_width = 64
+    args.lr_a = 3e-4
+    args.lr_c = 3e-4
+    args.gamma = 0.99
+    args.lamda = 0.95
+    args.epsilon = 0.2
+    args.K_epochs = 10
+    args.is_adv_norm = True
+    args.is_state_norm = True
+    args.is_reward_norm = False
+    args.is_reward_scaling = True
+    args.entropy_coef = 0.01
+    args.is_lr_decay = True
+    args.is_grad_clip = True
+    args.is_orthogonal_init = True
+    args.adam_eps = True
+    args.is_tanh = True
+    args.safety_layer_enabled = True
+    args.cbf_tau = 0.3
+    args.CAV_idx = 1
+    args.FV1_idx = 2
+    args.FV2_idx = 3
+    args.safety_layer_no_grad = False
+    args.car_following_parameters = [0.5, 0.5, 0.5]
+    args.num_episodes = 500
+    args.vehicle_num = 4
+    args.SIDE_update = False
+    args.lr_cf = 1e-4
+    args.lr_de = 1e-4
+    args.batch_size_SIDE = 256
+    args.buffer_size_SIDE = 10000
+    args.SIDE_enabled = True
+    args.SIDE_load = side_load
     args.device = device
     args.state_dim = env.observation_space.shape[0]
     args.action_dim = env.action_space.shape[0]
-    args.max_action = 5.0
+    args.max_action = 1.0
+    args.s_star = 42
+    args.v_star = 20
+    args.safety_double_apply = False
     args.max_episode_steps = env.max_steps
+    return args
+
+
+def load_pretrain_model_and_test(ppo_episode=500, max_timesteps=10000, device="cpu", side_load=True):
+    from platoon_env import PlatoonEnv
+    from ppo_agent import PPOAgent
+
+    env = PlatoonEnv(max_steps=max_timesteps)
+    args = build_ppo_args(env, device, side_load=side_load)
     agent = PPOAgent(args)
+    agent.load(str(MODEL_DIR), ppo_episode)
+    return agent, env
 
-    agent.load("model_parameters", 500)
-    #env.select_scenario = 4
-    #velocity_data, spacing_data = test(agent, env, agent_select)
-
-    return agent, env, agent_select #velocity_data, spacing_data
 
 def test(agent, env, train_type, num_episodes=1):
-    '''
-    Test the agent
-    '''
-    episode_rewards = []
     velocity_data = []
     spacing_data = []
     acceleration_data = []
-    for episode in range(num_episodes):
-        # Reset the environment
+
+    for _ in range(num_episodes):
         state, acceleration = env.reset()
 
         if train_type == 0:
@@ -142,156 +94,247 @@ def test(agent, env, train_type, num_episodes=1):
                 env.select_scenario = 0
             elif env_select < 0.9:
                 env.select_scenario = 1
-            #elif env_select < 0.75:
-            #    env.select_scenario = 2
-            #elif env_select < 0.875:
-            #    env.select_scenario = 3
+            elif env_select < 0.95:
+                env.select_scenario = 2
             else:
-                env.select_scenario = 4
+                env.select_scenario = 3
 
         done = False
-        episode_reward = 0
-
-        # Run the episode
         while not done:
-            # Select an action using different policies
-            action, action_prob = agent.act(state, acceleration = acceleration)
-            next_state, reward, next_acceleration, done, _ = env.step(action)
+            action, _ = agent.act(state, acceleration=acceleration)
+            next_state, _, next_acceleration, done, _ = env.step(action)
 
-            # Update the state
             state = next_state
-            episode_reward += reward
-            # Collect data for visualization
+            acceleration = next_acceleration
             velocity_data.append(env.get_velocity())
             spacing_data.append(env.get_spacing())
             acceleration_data.append(env.get_acceleration())
 
-        # Print the test result
-        # print("Test Episode: {}".format(episode))
+    return np.array(velocity_data), np.array(spacing_data), np.array(acceleration_data)
 
-        # Save the rewards
-        episode_rewards.append(episode_reward)
 
-    # Convert data to NumPy arrays
-    s_star = 20
-    v_star = 15
-    velocity_data = np.array(velocity_data)
-    spacing_data = np.array(spacing_data)
-    acceleration_data = np.array(acceleration_data)
+def save_rollout_data(ppo_episode, num_episodes, train_type, device, side_load=True):
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    agent, env = load_pretrain_model_and_test(ppo_episode=ppo_episode, device=device, side_load=side_load)
+    velocity_data, spacing_data, acceleration_data = test(agent, env, train_type, num_episodes)
+    np.save(DATA_DIR / "velocity_data.npy", velocity_data)
+    np.save(DATA_DIR / "spacing_data.npy", spacing_data)
+    np.save(DATA_DIR / "acceleration_data.npy", acceleration_data)
 
+
+def save_pure_idm_rollout_data(num_episodes=20, max_steps=400, scenarios=(0, 1), seed=0,
+                               s_star=42, v_star=20, velocity_noise=1.0, num_vehicles=4,
+                               domain_randomize=True, dr_range=0.15, vehicle_length=4.75):
+    """Collect SIDE pretraining data from a PURE car-following (IDM) platoon.
+
+    No PPO policy is involved: ``pure_car_following=True`` makes the CAV follow IDM
+    too, so every vehicle obeys the human IDM dynamics we want SIDE to approximate.
+    Only head-disturbance scenarios (0=random walk, 1=braking) are used, because
+    scenarios 2/3 force a follower's acceleration (non-IDM) and would corrupt the
+    car-following targets.
+    """
+    from platoon_env import PlatoonEnv
+
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    init_params = {'v0': v_star, 's0': s_star, 'velocity_noise': velocity_noise, 'a_max': 5, 'a_min': -5}
+    env = PlatoonEnv(num_vehicles=num_vehicles, init_params=init_params,
+                     max_steps=max_steps, pure_car_following=True,
+                     vehicle_length=vehicle_length, domain_randomize=domain_randomize, dr_range=dr_range)
+
+    np.random.seed(seed)
+    random.seed(seed)
+    velocity_data, spacing_data, acceleration_data = [], [], []
+    for ep in range(num_episodes):
+        env.reset()
+        env.select_scenario = scenarios[ep % len(scenarios)]
+        done = False
+        while not done:
+            # Action is ignored under pure_car_following; pass a dummy value.
+            _, _, _, done, _ = env.step([0.0])
+            velocity_data.append(env.get_velocity())
+            spacing_data.append(env.get_spacing())
+            acceleration_data.append(env.get_acceleration())
+
+    np.save(DATA_DIR / "velocity_data.npy", np.array(velocity_data))
+    np.save(DATA_DIR / "spacing_data.npy", np.array(spacing_data))
+    np.save(DATA_DIR / "acceleration_data.npy", np.array(acceleration_data))
+    print(f"Saved {len(velocity_data)} pure-IDM samples to {DATA_DIR}")
+
+
+def load_rollout_data():
+    required = ["velocity_data.npy", "spacing_data.npy", "acceleration_data.npy"]
+    missing = [f for f in required if not (DATA_DIR / f).exists()]
+    if missing:
+        raise FileNotFoundError(
+            f"SIDE pretraining data not found in {DATA_DIR} (missing: {missing}). "
+            "Collect fresh rollouts from the CURRENT environment first:\n"
+            "    python SI_pretrain.py --collect_data --ppo_episode 500 --num_episodes 1\n"
+            "The stale 5-vehicle data has been archived under SI_pretrain/legacy_5veh/ "
+            "(see its NOTE.md)."
+        )
+    velocity_data = np.load(DATA_DIR / "velocity_data.npy")
+    spacing_data = np.load(DATA_DIR / "spacing_data.npy")
+    acceleration_data = np.load(DATA_DIR / "acceleration_data.npy")
     return velocity_data, spacing_data, acceleration_data
 
-if __name__ == "__main__":
-    data_saving = False
-    if data_saving:
-        agent, env, agent_select = load_pretrain_model_and_test()
-        velocity_data, spacing_data, acceleration_data = test(agent, env, 0)
-        np.save('SI_pretrain/velocity_data.npy', velocity_data)
-        np.save('SI_pretrain/spacing_data.npy', spacing_data)
-        np.save('SI_pretrain/acceleration_data.npy', acceleration_data)
-    else:
-        velocity_data = np.load('SI_pretrain/velocity_data.npy')
-        spacing_data = np.load('SI_pretrain/spacing_data.npy')
-        acceleration_data = np.load('SI_pretrain/acceleration_data.npy')
-        
-        X = np.array([spacing_data[:,4], velocity_data[:,4], velocity_data[:,3]]).transpose(1,0)
-        scale = MinMaxScaler(feature_range=(0,1))
-        scale.fit(X)
-        new_spacing_data= scale.transform(X)[:,0]
-        new_velocity_data = scale.transform(X)[:,1]
-        new_preceding_velocity_data = scale.transform(X)[:,2]
 
-        train_data = Data.TensorDataset(torch.tensor([new_spacing_data,new_velocity_data,new_preceding_velocity_data], dtype=torch.float32).transpose(0, 1), torch.tensor(acceleration_data[:,4], dtype=torch.float32))
-        
-        
-        train_data_loader = Data.DataLoader(dataset=train_data, batch_size=128, shuffle=True)
-        
-        lr = 1e-3
-        state_num = 3
-        device = 'cpu'
+def build_side_dataset(spacing_data, velocity_data, veh_idx, s_star=42, v_star=20):
+    if veh_idx <= 0:
+        raise ValueError("veh_idx must be a follower vehicle index.")
+    if veh_idx >= velocity_data.shape[1]:
+        raise ValueError(
+            f"veh_idx={veh_idx} is out of bounds for data with "
+            f"{velocity_data.shape[1]} vehicles."
+        )
 
-        model = FC(state_num).to(device)
-        optimizer = torch.optim.Adam(model.parameters(), lr = lr)
-        epochs = 5000
+    state = np.stack(
+        (
+            spacing_data[:-1, veh_idx] - s_star,
+            -(velocity_data[:-1, veh_idx] - v_star),
+            velocity_data[:-1, veh_idx - 1] - v_star,
+        ),
+        axis=1,
+    )
+    next_state = np.stack(
+        (
+            spacing_data[1:, veh_idx] - s_star,
+            -(velocity_data[1:, veh_idx] - v_star),
+            velocity_data[1:, veh_idx - 1] - v_star,
+        ),
+        axis=1,
+    )
 
-        scheduler = LinearLR(optimizer, start_factor=1, end_factor=1/100, total_iters=epochs)
+    return Data.TensorDataset(
+        torch.as_tensor(state, dtype=torch.float32),
+        torch.as_tensor(next_state, dtype=torch.float32),
+    )
 
-        dt = 0.1
-        #agent, env, agent_select = load_pretrain_model_and_test()
 
-        for i in range(epochs):
-            for step, (state, acceleration) in enumerate(train_data_loader):
-                optimizer.zero_grad()
-                action_pred = model(state)
-                loss = F.mse_loss(action_pred.squeeze(1),  acceleration)
-                loss.backward()
-                optimizer.step()
-                scheduler.step()
+def train_side_module(module, dataset, epochs, batch_size, device, print_every=50):
+    train_loader = Data.DataLoader(dataset=dataset, batch_size=batch_size, shuffle=True)
 
-            if i % 1 == 0:
-                print('epochs: ', i, 'loss: ', loss.item())
-            torch.save(model.state_dict(), 'SI_pretrain/fc_wo_equi.pth')
-        '''
-        lr_cf = 1e-2
-        lr_de = 1e-2
-        state_num = 3
-        action_num = 1
+    for epoch in range(epochs):
+        last_loss_cf = None
+        last_loss_de = None
 
-        device = 'cpu'
-        car_following_estimator = OVM_Estimator().to(device)
-        disturbance_estimator = Disturbance_Estimator(state_num, action_num).to(device)
+        for state, next_state in train_loader:
+            state = state.to(device=device, dtype=torch.float32)
+            next_state = next_state.to(device=device, dtype=torch.float32)
+            target_next_velocity = -next_state[:, 1]
 
-        optimizer_cf = torch.optim.Adam(car_following_estimator.parameters(), lr = lr_cf)
-        optimizer_de = torch.optim.Adam(disturbance_estimator.parameters(), lr = lr_de)
-
-        epochs = 200
-        scheduler_cf = LinearLR(optimizer_cf, start_factor=1, end_factor=1/400, total_iters=epochs)
-        scheduler_de = LinearLR(optimizer_de, start_factor=1, end_factor=1/400, total_iters=epochs)
-
-        dt = 0.1
-        agent, env, agent_select = load_pretrain_model_and_test()
-        for i in range(epochs):
-            velocity_data, spacing_data = test(agent, env, 0)
-            state = torch.tensor([spacing_data[:-1,4], -velocity_data[:-1,4], velocity_data[:-1,3]], dtype=torch.float32).transpose(0, 1)
-            next_state = torch.tensor([spacing_data[1:,4], -velocity_data[1:,4], velocity_data[1:,3]], dtype=torch.float32).transpose(0, 1)
-
-            optimizer_cf.zero_grad()
-
-            action_pred = car_following_estimator(state)
-
-            loss_cf = F.mse_loss(action_pred.squeeze(1),  next_state[:,1]-state[:,1])
+            module.optimizer_cf.zero_grad()
+            action_pred = module.car_following_estimator(state)
+            next_state_pred_wo_de = module._get_next_state(state, action_pred)
+            loss_cf = F.mse_loss(next_state_pred_wo_de, target_next_velocity)
             loss_cf.backward()
-            optimizer_cf.step()
-            scheduler_cf.step()
+            module.optimizer_cf.step()
 
-            if i % 1 == 0:
-                print('epochs: ', i, 'loss_cf: ', loss_cf.item())
-                print('car-following model parameters: ', [car_following_estimator.alpha1.cpu().detach().numpy().tolist(), car_following_estimator.alpha2.cpu().detach().numpy().tolist(), car_following_estimator.alpha3.cpu().detach().numpy().tolist()])
-            
-        torch.save(car_following_estimator.state_dict(), 'SI_pretrain/car_following_estimator.pth')
-    
-        for i in range(epochs):
-            velocity_data, spacing_data = test(agent, env, 1)
-            state = torch.tensor([spacing_data[:-1,5], -velocity_data[:-1,5], velocity_data[:-1,3]], dtype=torch.float32).transpose(0, 1)
-            next_state = torch.tensor([spacing_data[1:,5], -velocity_data[1:,5], velocity_data[1:,3]], dtype=torch.float32).transpose(0, 1)
-
-            optimizer_de.zero_grad()
-
-            action_pred = car_following_estimator(state)
-            action_disturbance = disturbance_estimator(torch.cat((state, action_pred.detach().cpu()), 1))
-
-            next_state_pred_w_de = -state[:, 1] + dt * (action_pred.detach().cpu().squeeze(1) + action_disturbance)
-
-            loss_de = F.mse_loss(action_pred.squeeze(1),  next_state[:,1]-state[:,1])
+            module.optimizer_de.zero_grad()
+            action_pred = module.car_following_estimator(state).detach()
+            action_disturbance = module.disturbance_estimator(torch.cat((state, action_pred), dim=1))
+            next_state_pred_w_de = module._get_next_state(state, action_pred + action_disturbance)
+            loss_de = F.mse_loss(next_state_pred_w_de, target_next_velocity)
             loss_de.backward()
-            optimizer_de.step()
-            scheduler_de.step()
+            module.optimizer_de.step()
 
-            if i % 1 == 0:
-                print('epochs: ', i, 'loss_de: ', loss_de.item())
+            last_loss_cf = loss_cf.item()
+            last_loss_de = loss_de.item()
 
-        torch.save(disturbance_estimator.state_dict(), 'SI_pretrain/disturbance_estimator.pth')
+        module.loss_cf_lst.append(last_loss_cf)
+        module.loss_de_lst.append(last_loss_de)
 
-        '''
-        
+        if epoch % print_every == 0 or epoch == epochs - 1:
+            print(
+                f"epoch {epoch}: loss_cf={last_loss_cf:.6f}, "
+                f"loss_de={last_loss_de:.6f}, "
+                f"parameters={module.car_following_model_parameters()}"
+            )
 
+
+def pretrain_side(args):
+    velocity_data, spacing_data, _ = load_rollout_data()
+    output_dir = Path(args.output_dir)
+    if not output_dir.is_absolute():
+        output_dir = BASE_DIR / output_dir
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    side_fv1 = NN_SI_DE_Module(
+        3,
+        1,
+        args.lr_cf,
+        args.lr_de,
+        args.batch_size,
+        args.buffer_size,
+        args.device,
+        args.FV1_idx,
+        num_vehicles=args.vehicle_num,
+    )
+    side_fv2 = NN_SI_DE_Module(
+        3,
+        1,
+        args.lr_cf,
+        args.lr_de,
+        args.batch_size,
+        args.buffer_size,
+        args.device,
+        args.FV2_idx,
+        num_vehicles=args.vehicle_num,
+    )
+
+    fv1_dataset = build_side_dataset(spacing_data, velocity_data, args.FV1_idx, s_star=args.s_star, v_star=args.v_star)
+    fv2_dataset = build_side_dataset(spacing_data, velocity_data, args.FV2_idx, s_star=args.s_star, v_star=args.v_star)
+
+    print("Pretraining SIDE_FV1")
+    train_side_module(side_fv1, fv1_dataset, args.epochs, args.batch_size, args.device, args.print_every)
+    print("Pretraining SIDE_FV2")
+    train_side_module(side_fv2, fv2_dataset, args.epochs, args.batch_size, args.device, args.print_every)
+
+    side_fv1.save_model(str(output_dir / "SIDE_FV1_"))
+    side_fv2.save_model(str(output_dir / "SIDE_FV2_"))
+    print(f"Saved SIDE weights to {output_dir}")
+
+
+def parse_args():
+    parser = argparse.ArgumentParser("Pretrain SIDE models for PPO")
+    parser.add_argument("--collect_data", action="store_true", help="Collect rollout data via a trained PPO policy (legacy)")
+    parser.add_argument("--collect_pure_idm", action="store_true", help="Collect data from a pure car-following (IDM) platoon (recommended; no PPO needed)")
+    parser.add_argument("--collect_episodes", type=int, default=20, help="Pure-IDM collection episodes")
+    parser.add_argument("--max_steps", type=int, default=400, help="Steps per collection episode")
+    parser.add_argument("--scenarios", type=str, default="0,1", help="Comma-separated head-disturbance scenarios for pure-IDM collection")
+    parser.add_argument("--s_star", type=float, default=42.0, help="Equilibrium spacing centre-to-centre (must match training)")
+    parser.add_argument("--v_star", type=float, default=20.0, help="Equilibrium velocity (must match training)")
+    parser.add_argument("--velocity_noise", type=float, default=1.0, help="Head accel noise std for collection")
+    parser.add_argument("--domain_randomize", type=str2bool, nargs="?", const=True, default=True, help="Randomize IDM params during collection (match training)")
+    parser.add_argument("--dr_range", type=float, default=0.15, help="Domain randomization fraction (+/-)")
+    parser.add_argument("--vehicle_length", type=float, default=4.75, help="Vehicle length (IDM net gap = spacing - length)")
+    parser.add_argument("--ppo_episode", type=int, default=500, help="PPO checkpoint episode used for legacy data collection")
+    parser.add_argument("--num_episodes", type=int, default=1, help="Legacy PPO rollout episodes used for data collection")
+    parser.add_argument("--train_type", type=int, default=0, help="0 uses scenario 0; other values sample scenarios")
+    parser.add_argument("--device", type=str, default="cpu", help="Training device")
+    parser.add_argument("--epochs", type=int, default=500, help="Pretraining epochs")
+    parser.add_argument("--batch_size", type=int, default=256, help="SIDE pretraining batch size")
+    parser.add_argument("--buffer_size", type=int, default=10000, help="Kept for PPO SIDE module compatibility")
+    parser.add_argument("--lr_cf", type=float, default=1e-3, help="Car-following estimator learning rate")
+    parser.add_argument("--lr_de", type=float, default=1e-3, help="Disturbance estimator learning rate")
+    parser.add_argument("--vehicle_num", type=int, default=4, help="Number of vehicles in the platoon")
+    parser.add_argument("--FV1_idx", type=int, default=2, help="First HDV follower index")
+    parser.add_argument("--FV2_idx", type=int, default=3, help="Second HDV follower index")
+    parser.add_argument("--output_dir", type=str, default="model_parameters", help="Directory for PPO-loadable SIDE weights")
+    parser.add_argument("--print_every", type=int, default=50, help="Logging interval in epochs")
+    parser.add_argument("--SIDE_load", type=str2bool, nargs="?", const=True, default=True,
+                        help="During --collect_data, whether the rollout agent loads trained SIDE weights (true/false)")
+    return parser.parse_args()
+
+
+if __name__ == "__main__":
+    args = parse_args()
+    if args.collect_pure_idm:
+        scenarios = tuple(int(x) for x in str(args.scenarios).split(","))
+        save_pure_idm_rollout_data(num_episodes=args.collect_episodes, max_steps=args.max_steps,
+                                   scenarios=scenarios, seed=0, s_star=args.s_star, v_star=args.v_star,
+                                   velocity_noise=args.velocity_noise, num_vehicles=args.vehicle_num,
+                                   domain_randomize=args.domain_randomize, dr_range=args.dr_range,
+                                   vehicle_length=args.vehicle_length)
+    elif args.collect_data:
+        save_rollout_data(args.ppo_episode, args.num_episodes, args.train_type, args.device, side_load=args.SIDE_load)
+    pretrain_side(args)

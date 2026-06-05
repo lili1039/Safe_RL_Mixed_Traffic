@@ -1,8 +1,9 @@
+import os
 import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib
 import torch
-import gym
+import gymnasium as gym
 from ppo_agent import PPOAgent
 from platoon_env import PlatoonEnv
 import pandas as pd
@@ -25,10 +26,7 @@ def cal_SafeRegion(time_range, acceleration_range, step, mode, safety_layer_enab
     """
     # get the state space
     env = PlatoonEnv(select_scenario = mode, set_disturbance = True)
-    nn_cbf_enabled = False
-    nn_cbf_update = False
     safety_layer_no_grad = False
-    filter_update = False
     SIDE_update = False
     if safety_layer_enabled:
         SIDE_enabled = True
@@ -59,30 +57,14 @@ def cal_SafeRegion(time_range, acceleration_range, step, mode, safety_layer_enab
     parser.add_argument("--adam_eps", type=float, default=True, help="Set Adam epsilon=1e-5")
     parser.add_argument("--is_tanh", type=float, default=True, help="Tanh activation function")
     parser.add_argument("--safety_layer_enabled", type=bool, default=safety_layer_enabled, help="Safety layer enabled or not")
-    parser.add_argument("--nn_cbf_enabled", type=bool, default = nn_cbf_enabled, help="NN dynamics enabled or not")
-    parser.add_argument("--cbf_tau", type=float, default=0.3, help="CAV index in the platoon")
-    parser.add_argument("--cbf_gamma", type=float, default=2, help="CAV index in the platoon")
-    parser.add_argument("--CAV_index", type=float, default=1, help="CAV index in the platoon")
+    parser.add_argument("--cbf_tau", type=float, default=0.3, help="CBF time headway tau")
     parser.add_argument("--CAV_idx", type=float, default=1, help="CAV index in the platoon")
-    parser.add_argument("--FV1_idx", type=float, default=2, help="CAV index in the platoon")
-    parser.add_argument("--FV2_idx", type=float, default=3, help="CAV index in the platoon")
-    parser.add_argument("--Lf_CAV", type=float, default=0.5, help="CAV index in the platoon")
-    parser.add_argument("--Lg_CAV", type=float, default=0.5, help="CAV index in the platoon")
-    parser.add_argument("--Lf_FV1", type=float, default=0.5, help="CAV index in the platoon")
-    parser.add_argument("--Lg_FV1", type=float, default=0.5, help="CAV index in the platoon")
-    parser.add_argument("--Lf_FV2", type=float, default=0.5, help="CAV index in the platoon")
-    parser.add_argument("--Lg_FV2", type=float, default=0.5, help="CAV index in the platoon") 
-    parser.add_argument("--dt", type=float, default=0.1, help="CAV index in the platoon")
-    parser.add_argument("--lr_cbf", type=float, default=1e-4, help="CAV index in the platoon")
-    parser.add_argument("--state_size_nncbf", type=float, default=4, help="CAV index in the platoon")
-    parser.add_argument("--hidden_size_nncbf", type=float, default=128, help="CAV index in the platoon")
-    parser.add_argument("--output_size_nncbf", type=float, default=1, help="CAV index in the platoon")
-    parser.add_argument("--safety_layer_no_grad", type=bool, default=safety_layer_no_grad, help="CAV index in the platoon")
+    parser.add_argument("--FV1_idx", type=float, default=2, help="First HDV follower index")
+    parser.add_argument("--FV2_idx", type=float, default=3, help="Second HDV follower index")
+    parser.add_argument("--safety_layer_no_grad", type=bool, default=safety_layer_no_grad, help="Freeze CBF parameters (no gradient)")
     parser.add_argument("--car_following_parameters", type=list, default=[3,3,3], help="car following parameters initialized") #[1.2566, 1.5000, 0.9000]
-    parser.add_argument("--nn_cbf_update",type=bool, default=nn_cbf_update, help="NN dynamics online update enabled or not")
     parser.add_argument("--num_episodes",type=int, default = 500, help="number of training episodes")
-    parser.add_argument("--vehicle_num",type=int, default = 5, help="number of vehicles in the platoon")
-    parser.add_argument("--filter_update", type=bool, default=filter_update, help="filter update enabled or not")
+    parser.add_argument("--vehicle_num",type=int, default = 4, help="number of vehicles in the platoon")
     parser.add_argument("--SIDE_update", type=bool, default=SIDE_update, help="SIDE update enabled or not")
     parser.add_argument("--lr_cf", type=float, default=1e-3, help="SI learning rate")
     parser.add_argument("--lr_de", type=float, default=1e-3, help="DE learning rate")
@@ -90,6 +72,8 @@ def cal_SafeRegion(time_range, acceleration_range, step, mode, safety_layer_enab
     parser.add_argument("--buffer_size_SIDE", type=int, default=10000, help="SIDE buffer size")
     parser.add_argument("--SIDE_enabled", type=bool, default=SIDE_enabled, help="SIDE enabled or not")
     args = parser.parse_args()
+    # Load the trained SIDE weights when SIDE is enabled (agent.load only restores actor/critic)
+    args.SIDE_load = SIDE_enabled
     args.device = device
     args.state_dim = env.observation_space.shape[0]
     args.action_dim = env.action_space.shape[0]
@@ -108,6 +92,7 @@ def cal_SafeRegion(time_range, acceleration_range, step, mode, safety_layer_enab
         safe_region[np.where(time == disturbance[0]), np.where(acceleration == disturbance[1])] = if_collision
         
     if save_region:
+        os.makedirs('SafeRegion', exist_ok=True)
         np.save('SafeRegion/safe_region_' + str(mode) + '_safe_layer_' + str(safety_layer_enabled) + '.npy', safe_region)
 
     return safe_region
@@ -158,6 +143,7 @@ def plot_safe_region(safe_region, time_range, acceleration_range, step, mode, sa
     plt.ylabel('Time')
     # plt.title('Safe Region')
     plt.colorbar()
+    os.makedirs('SafeRegion', exist_ok=True)
     plt.savefig('SafeRegion/safe_region_' + str(mode) + '_safe_layer_' + str(safety_layer_enabled) + '.png')
     plt.show()
 
@@ -206,14 +192,15 @@ def plot_safe_region_comparison(safe_region1, safe_region2, time_range, accelera
     plt.ylabel('Time (s)', fontdict={'family' : 'Times New Roman', 'size'   : 28})
     plt.yticks(fontproperties = 'Times New Roman', size = 22)
     plt.xticks(fontproperties = 'Times New Roman', size = 22)
-    plt.legend(['with safety layer', 'w\o safety layer'], frameon=False, prop={'family' : 'Times New Roman', 'size'   : 18})
+    plt.legend(['with safety layer', 'w/o safety layer'], frameon=False, prop={'family' : 'Times New Roman', 'size'   : 18})
     # plt.title('Safe Region')
+    os.makedirs('SafeRegion', exist_ok=True)
     plt.savefig('SafeRegion/safe_region_' + str(mode) + '.pdf')
     plt.show()
 
 if __name__ == "__main__":
     generate_new_map = False
-    mode = 4#2
+    mode = 1  # 1 = head-vehicle emergency braking (disturbance[1] sets braking magnitude)
 
     if generate_new_map:
         # set the range of time and acceleration

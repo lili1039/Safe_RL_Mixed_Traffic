@@ -1,7 +1,7 @@
+import os
 import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib
-import numpy as np
 import matplotlib.animation as animation
 from platoon_env import PlatoonEnv
 from ppo_agent import PPOAgent
@@ -63,14 +63,8 @@ def test(agent, env, max_timesteps, agent_type = 'ddpg'):
     states = states[np.newaxis,:]
     # Run the simulation
     for t in range(max_timesteps):
-        # Select an action using different policies
-        if agent_type == 'ddpg':
-            action, action_safe = agent.act(state, add_noise=False)
-            next_state, reward, done, _ = env.step(action_safe)
-
-        elif agent_type == 'ppo':
-            action, action_prob = agent.act(state, evaluate = True, acceleration = acceleration)
-            next_state, reward, next_acceleration, done, _ = env.step(action)
+        action, action_prob = agent.act(state, evaluate = True, acceleration = acceleration)
+        next_state, reward, next_acceleration, done, _ = env.step(action)
 
         # Update the state
         state = next_state
@@ -154,7 +148,8 @@ def plot_traj(states, vehicle_number, CAV_index, save_path=None, acceleration_ls
 def visualize(states, vehicle_number, CAV_index, gif_filename):
     # set the figure
     fig, ax = plt.subplots()
-    ax.set_xlim(0, 121)
+    equilibrium_spacing = 50
+    ax.set_xlim(0, (vehicle_number + 2) * equilibrium_spacing + 1)
     ax.set_ylim(0, 25)
     #ax.set_xlabel('Position (m)')
     ax.set_ylabel('Velocity (m/s)')
@@ -173,10 +168,10 @@ def visualize(states, vehicle_number, CAV_index, gif_filename):
         spacing_accumulation = 0
         for i, scatter in enumerate(scatters):
             spacing_accumulation += states[frame][i + vehicle_number] 
-            position = (vehicle_number + 2) * 20 - spacing_accumulation
+            position = (vehicle_number + 2) * equilibrium_spacing - spacing_accumulation
             velocity = states[frame][i]
             scatter.set_offsets(np.array([[position, velocity]]))
-        ax.set_title(f'Time: {round(frame*0.1,1)}')
+        ax.set_title(f'Time: {round(frame*0.12,2)}')
 
     # start the animation
     ani = animation.FuncAnimation(fig, update, frames=len(states), interval=100)
@@ -190,11 +185,7 @@ if __name__ == '__main__':
     safety_layer_enabled = False
     safety_layer_no_grad = False
     pure_HDV = False
-    nn_cbf_enabled = False
-    nn_cbf_update = False
-    # Set if update the filter
-    filter_update = False
-    # Set if update the SIDE
+    # Set if update the SIDE (kept off at eval; SIDE is loaded, not re-learned)
     SIDE_update = False
     SIDE_enabled = False
     if_plot = True
@@ -232,30 +223,14 @@ if __name__ == '__main__':
     parser.add_argument("--adam_eps", type=float, default=True, help="Set Adam epsilon=1e-5")
     parser.add_argument("--is_tanh", type=float, default=True, help="Tanh activation function")
     parser.add_argument("--safety_layer_enabled", type=bool, default=safety_layer_enabled, help="Safety layer enabled or not") #default = safety_layer_enabled
-    parser.add_argument("--nn_cbf_enabled", type=bool, default=nn_cbf_enabled, help="NN dynamics enabled or not")
-    parser.add_argument("--CAV_index", type=float, default=1, help="CAV index in the platoon")
-    parser.add_argument("--cbf_tau", type=float, default=0.3, help="CAV index in the platoon")
-    parser.add_argument("--cbf_gamma", type=float, default=1, help="CAV index in the platoon")
+    parser.add_argument("--cbf_tau", type=float, default=0.3, help="CBF time headway tau")
     parser.add_argument("--CAV_idx", type=float, default=1, help="CAV index in the platoon")
-    parser.add_argument("--FV1_idx", type=float, default=2, help="CAV index in the platoon")
-    parser.add_argument("--FV2_idx", type=float, default=3, help="CAV index in the platoon")
-    parser.add_argument("--Lf_CAV", type=float, default=0.5, help="CAV index in the platoon")
-    parser.add_argument("--Lg_CAV", type=float, default=0.5, help="CAV index in the platoon")
-    parser.add_argument("--Lf_FV1", type=float, default=0.5, help="CAV index in the platoon")
-    parser.add_argument("--Lg_FV1", type=float, default=0.5, help="CAV index in the platoon")
-    parser.add_argument("--Lf_FV2", type=float, default=0.5, help="CAV index in the platoon")
-    parser.add_argument("--Lg_FV2", type=float, default=0.5, help="CAV index in the platoon")
-    parser.add_argument("--dt", type=float, default=0.1, help="CAV index in the platoon")
-    parser.add_argument("--lr_cbf", type=float, default=1e-4, help="CAV index in the platoon")
-    parser.add_argument("--state_size_nncbf", type=float, default=4, help="CAV index in the platoon")
-    parser.add_argument("--hidden_size_nncbf", type=float, default=128, help="CAV index in the platoon")
-    parser.add_argument("--output_size_nncbf", type=float, default=1, help="CAV index in the platoon")
-    parser.add_argument("--safety_layer_no_grad", type=bool, default=safety_layer_no_grad, help="CAV index in the platoon")
+    parser.add_argument("--FV1_idx", type=float, default=2, help="First HDV follower index")
+    parser.add_argument("--FV2_idx", type=float, default=3, help="Second HDV follower index")
+    parser.add_argument("--safety_layer_no_grad", type=bool, default=safety_layer_no_grad, help="Freeze CBF parameters (no gradient)")
     parser.add_argument("--car_following_parameters", type=list, default=[3,3,3], help="car following parameters initialized") #0.5,0.4,0.3 [2,2,2] [1.2566, 1.5000, 0.9000]
-    parser.add_argument("--nn_cbf_update",type=bool, default=nn_cbf_update, help="NN dynamics online update enabled or not")
     parser.add_argument("--num_episodes",type=int, default=100, help="number of episodes for training")
-    parser.add_argument("--vehicle_num",type=int, default = 5, help="number of vehicles in the platoon")
-    parser.add_argument("--filter_update", type=bool, default=filter_update, help="filter update enabled or not")
+    parser.add_argument("--vehicle_num",type=int, default = 4, help="number of vehicles in the platoon")
     parser.add_argument("--SIDE_update", type=bool, default=SIDE_update, help="SIDE update enabled or not")
     parser.add_argument("--lr_cf", type=float, default=1e-3, help="SI learning rate")
     parser.add_argument("--lr_de", type=float, default=1e-3, help="DE learning rate")
@@ -263,19 +238,24 @@ if __name__ == '__main__':
     parser.add_argument("--buffer_size_SIDE", type=int, default=10000, help="SIDE buffer size")
     parser.add_argument("--SIDE_enabled", type=bool, default=SIDE_enabled, help="SIDE enabled or not")
     args = parser.parse_args()
+    # Load the trained SIDE weights when SIDE is enabled (otherwise the safety layer
+    # would use a randomly-initialised identifier). agent.load() only restores the
+    # actor/critic, not the SIDE modules.
+    args.SIDE_load = SIDE_enabled
     args.device = device
     args.state_dim = env_rl.observation_space.shape[0]
     args.action_dim = env_rl.action_space.shape[0]
     args.max_action = 5.0
     args.max_episode_steps = env_rl.max_steps
+    os.makedirs('results', exist_ok=True)
     agent = PPOAgent(args)
 
     # Load the pre-trained model
     agent.load('model_parameters/', 500)
     # Test the pre-trained model
-    vehicle_number = 5
+    vehicle_number = 4
     CAV_index_zero = []
-    CAV_index_rl = [2]
+    CAV_index_rl = [1]
     
     # Test pure HDV scenario
     if pure_HDV:
@@ -286,28 +266,21 @@ if __name__ == '__main__':
         # save the results
         np.save('results/test_cf_traj' + '_scenario_'+ str(scenario) +'.npy', states_cf)
 
-    # Test RL scenario
-    if nn_cbf_enabled:
-        prompt = 'nn_cbf'
-        agent.barrier_optimizer_FV1.load('model_parameters/', 500, 'FV1')
-        agent.barrier_optimizer_FV2.load('model_parameters/', 500, 'FV2')
-    else:
-        prompt = 'no_nn_cbf'
     states_rl, acc_ls_rl = test(agent, env_rl, max_timesteps, agent_type)
     
 
     if safety_layer_enabled:
         if if_plot:
-            plot_traj(states_rl, vehicle_number, CAV_index_rl, save_path='results/' + agent_type + '_test_rl_traj' + '_' + prompt+'_SIDE_'+str(SIDE_enabled), acceleration_ls = acc_ls_rl, scenario = scenario)
-            visualize(states_rl, vehicle_number, CAV_index_rl, gif_filename='results/' + agent_type + '_test_rl_traj' + '_' + prompt + '_scenario_'+ str(scenario) + '_SI_enabled_'+ str(SIDE_enabled) + '.gif')
+            plot_traj(states_rl, vehicle_number, CAV_index_rl, save_path='results/' + agent_type + '_test_rl_traj_SIDE_'+str(SIDE_enabled), acceleration_ls = acc_ls_rl, scenario = scenario)
+            visualize(states_rl, vehicle_number, CAV_index_rl, gif_filename='results/' + agent_type + '_test_rl_traj_scenario_'+ str(scenario) + '_SI_enabled_'+ str(SIDE_enabled) + '.gif')
         # save the results
-        np.save('results/' + agent_type + '_test_rl_traj' + '_' + prompt + '_scenario_'+ str(scenario) + '_SI_enabled_'+ str(SIDE_enabled) + '.npy', states_rl)
+        np.save('results/' + agent_type + '_test_rl_traj_scenario_'+ str(scenario) + '_SI_enabled_'+ str(SIDE_enabled) + '.npy', states_rl)
     elif safety_layer_no_grad:
         if if_plot:
-            plot_traj(states_rl, vehicle_number, CAV_index_rl, save_path='results/' + agent_type + '_test_rl_traj_no_grad' + '_' + prompt, acceleration_ls = acc_ls_rl, scenario = scenario)
-            visualize(states_rl, vehicle_number, CAV_index_rl, gif_filename='results/' + agent_type + '_test_rl_traj_no_grad' + '_' + prompt + '_scenario_'+ str(scenario) + '_SI_enabled_'+ str(SIDE_enabled) + '.gif')
+            plot_traj(states_rl, vehicle_number, CAV_index_rl, save_path='results/' + agent_type + '_test_rl_traj_no_grad', acceleration_ls = acc_ls_rl, scenario = scenario)
+            visualize(states_rl, vehicle_number, CAV_index_rl, gif_filename='results/' + agent_type + '_test_rl_traj_no_grad_scenario_'+ str(scenario) + '_SI_enabled_'+ str(SIDE_enabled) + '.gif')
         # save the results
-        np.save('results/' + agent_type + '_test_rl_traj_no_grad' + '_' + prompt + '_scenario_'+ str(scenario) + '_SI_enabled_'+ str(SIDE_enabled) + '.npy', states_rl)
+        np.save('results/' + agent_type + '_test_rl_traj_no_grad_scenario_'+ str(scenario) + '_SI_enabled_'+ str(SIDE_enabled) + '.npy', states_rl)
     else:
         if if_plot:
             plot_traj(states_rl, vehicle_number, CAV_index_rl, save_path='results/' + agent_type + '_test_rl_traj_no_safe', acceleration_ls = acc_ls_rl, scenario = scenario)
