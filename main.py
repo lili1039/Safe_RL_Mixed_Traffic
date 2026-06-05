@@ -224,7 +224,7 @@ if __name__ == "__main__":
     SIDE_enabled = True
 
     parser = argparse.ArgumentParser("Hyperparameters Setting for PPO")
-    parser.add_argument("--max_train_steps", type=int, default=int(3e6), help=" Maximum number of training steps")
+    parser.add_argument("--max_train_steps", type=int, default=int(1e6), help=" Maximum number of training steps")
     parser.add_argument("--evaluate_freq", type=float, default=5e3, help="Evaluate the policy every 'evaluate_freq' steps")
     parser.add_argument("--save_freq", type=int, default=20, help="Save frequency")
     parser.add_argument("--batch_size", type=int, default=2048, help="Batch size")
@@ -248,12 +248,15 @@ if __name__ == "__main__":
     parser.add_argument("--is_tanh", type=float, default=True, help="Tanh activation function")
     parser.add_argument("--safety_layer_enabled", type=str2bool, nargs="?", const=True, default=safety_layer_enabled, help="Safety layer enabled or not")
     parser.add_argument("--cbf_tau", type=float, default=0.3, help="CBF time headway tau")
+    parser.add_argument("--cbf_cav_alpha", type=float, default=1.0, help="CBF class-K gain for the CAV's own front barrier (fixed, full strength)")
+    parser.add_argument("--cbf_follower_alpha", type=float, default=0.5, help="CBF class-K gain for the follower barriers (fixed, <1.0 = gentler gap-consistency restoration)")
+    parser.add_argument("--cbf_min_gap", type=float, default=5.0, help="Minimum spacing margin in the CAV-front CBF barrier (s>=min_gap, accounts for vehicle length)")
     parser.add_argument("--CAV_idx", type=float, default=1, help="CAV index in the platoon")
     parser.add_argument("--FV1_idx", type=float, default=2, help="First HDV follower index")
     parser.add_argument("--FV2_idx", type=float, default=3, help="Second HDV follower index")
     parser.add_argument("--safety_layer_no_grad", type=str2bool, nargs="?", const=True, default=safety_layer_no_grad, help="Freeze CBF parameters (no gradient)")
     parser.add_argument("--car_following_parameters", type=list, default=[0.5,0.5,0.5], help="car following parameters initialized") #[1.2566, 1.5000, 0.9000]
-    parser.add_argument("--num_episodes",type=int, default = 500, help="number of training episodes")
+    parser.add_argument("--num_episodes",type=int, default = 1000, help="number of training episodes")
     parser.add_argument("--vehicle_num",type=int, default = 4, help="number of vehicles in the platoon")
     parser.add_argument("--SIDE_update", type=str2bool, nargs="?", const=True, default=SIDE_update, help="SIDE update enabled or not")
     parser.add_argument("--lr_cf", type=float, default=1e-4, help="SI learning rate")

@@ -112,9 +112,10 @@ class PlatoonEnv(gym.Env):
         else:
             safety_FW2 = 0
 
-        # Traffic Efficiency
+        # Traffic Efficiency: penalize an over-large time gap. Threshold relaxed to 3.5
+        # (was 2.5) so the CAV is not pushed to aggressively close moderate gaps.
         TG = self.sim.spacing[1] / (self.sim.velocity[1] + eps)
-        if TG >= 2.5:
+        if TG >= 3.5:
             R_eff = -1
         else:
             R_eff = 0

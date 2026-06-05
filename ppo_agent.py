@@ -49,7 +49,8 @@ class Actor(nn.Module):
         self.register_buffer('state_mean', torch.tensor(s_mean))
         self.register_buffer('state_std', torch.tensor(s_std))
         if self.safety_layer_enabled or self.safety_layer_no_grad:
-            self.safeLayer = BarrierLayer(args.state_dim, self.car_following_parameters, self.safety_layer_no_grad, SIDE_enabled=args.SIDE_enabled, num_vehicles=args.vehicle_num, s_star=getattr(args, 's_star', 25), v_star=getattr(args, 'v_star', 20))
+            self.safeLayer = BarrierLayer(args.state_dim, self.car_following_parameters, self.safety_layer_no_grad, SIDE_enabled=args.SIDE_enabled, num_vehicles=args.vehicle_num, s_star=getattr(args, 's_star', 25), v_star=getattr(args, 'v_star', 20),
+                                          cav_alpha=getattr(args, 'cbf_cav_alpha', 1.0), follower_alpha=getattr(args, 'cbf_follower_alpha', 0.5), min_gap=getattr(args, 'cbf_min_gap', 5.0))
         else:
             self.safeLayer = None
         # Use orthogonal initialization
@@ -301,7 +302,7 @@ class PPOAgent():
                         a_gn = torch.tensor(0.0)
                     self.optimizer_actor.step()
                     if self.safety_layer_enabled:
-                        self.actor.safeLayer.gamma.data = torch.clamp(self.actor.safeLayer.gamma.data, 0, 10)
+                        # gamma is now a fixed buffer (not learned); only k1 is clamped.
                         self.actor.safeLayer.k1.data = torch.clamp(self.actor.safeLayer.k1.data, 0, 10)
 
                     v_s = self.critic(s[index])

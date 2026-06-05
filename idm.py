@@ -40,7 +40,7 @@ def idm_acceleration(v, dv, s, params):
 class IDMModel:
     def __init__(self, num_vehicles=4, params=None, cav_index=None, idm_params=None,
                  vehicle_length=VEHICLE_LENGTH, domain_randomize=False, dr_range=0.15,
-                 brake_accel=5.0, accel_mag=1.0):
+                 brake_accel=4.0, accel_mag=1.0):
         # Set the default parameters used by the simulator (equilibrium / head scenarios)
         if params is None:
             params = {

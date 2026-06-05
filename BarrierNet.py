@@ -8,7 +8,8 @@ from qpth.qp import QPFunction, QPSolvers
 eps = 1e-7
 
 class BarrierLayer(nn.Module):
-    def __init__(self, states_size, car_following_parameters = [1.2566, 1.5000, 0.9000], safety_layer_no_grad = False, SIDE_enabled = False, num_vehicles = 4, s_star = 25, v_star = 20):
+    def __init__(self, states_size, car_following_parameters = [1.2566, 1.5000, 0.9000], safety_layer_no_grad = False, SIDE_enabled = False, num_vehicles = 4, s_star = 25, v_star = 20,
+                 cav_alpha = 1.0, follower_alpha = 0.5, min_gap = 5.0):
         super(BarrierLayer, self).__init__()
         # Equilibrium operating point (must match env reset spacing, reward & SI normalization)
         self.s_star = s_star
@@ -24,12 +25,24 @@ class BarrierLayer(nn.Module):
         # included, so observation index == physical vehicle index and the velocity of
         # vehicle k lives at index k + num_vehicles.
         self.vel_offset = num_vehicles
+        # CBF class-K gains gamma = [CAV-front, follower-1, follower-2]. These are now
+        # FIXED (not learned): the CAV's own front-safety barrier stays at full strength
+        # (cav_alpha=1.0) so collision avoidance is uncompromised, while the follower
+        # barriers use a smaller gain (follower_alpha<1.0) so the gap-consistency
+        # restoration is gentle and does not over-react (no large accel spike when a CAV
+        # starts much farther back than its followers, e.g. at an IDM->RL handover).
+        gamma_init = torch.tensor([float(cav_alpha), float(follower_alpha), float(follower_alpha)])
         if safety_layer_no_grad:
-            self.gamma = torch.tensor([1.0,1.0,1.0])#2*torch.ones(self.following_veh + 1)
+            self.gamma = gamma_init
             self.k1 = torch.tensor([1.0])
         else:
-            self.gamma = nn.Parameter(torch.tensor([1.0,1.0,1.0]), requires_grad=True)
+            # gamma is a non-trainable buffer; only k1 (feasibility-constraint gain) is learned.
+            self.register_buffer('gamma', gamma_init)
             self.k1 = nn.Parameter(torch.tensor([10.0]), requires_grad=True)
+        # Minimum spacing margin enforced by the CAV-front barrier (accounts for vehicle
+        # length): the safe set is s_i - tau*v_i - min_gap >= 0, i.e. spacing >= min_gap
+        # (+ the time-headway term) rather than >= 0.
+        self.min_gap = float(min_gap)
         # self.car_following_parameters = car_following_parameters
 
         self.FW1_parameters = car_following_parameters
@@ -43,7 +56,7 @@ class BarrierLayer(nn.Module):
 
         v_star   = self.v_star
         s_star   = self.s_star
-        bias = 0.
+        min_gap  = self.min_gap
         if_batch = states.dim() > 1 # check if batch
 
         if if_batch:
@@ -86,7 +99,7 @@ class BarrierLayer(nn.Module):
             #Lfh = (v_im - v_i).unsqueeze(1) #+ La.detach()
             #Lgh = -tau #+ Lb.detach()
 
-            alpha_h_1 = (self.gamma[0]*(s_i - tau * v_i).pow(1) - bias).unsqueeze(1)
+            alpha_h_1 = (self.gamma[0]*(s_i - tau * v_i - min_gap).pow(1)).unsqueeze(1)
             alpha_h_2 = (self.gamma[1]*(s_f_1 - s_i - tau * (v_f_1 - v_i)).pow(1)).unsqueeze(1)
             alpha_h_3 = (self.gamma[2]*(s_f_2 - s_i - tau * (v_f_2 - v_i)).pow(1)).unsqueeze(1)
             alpha_h_ls = torch.hstack([alpha_h_1, alpha_h_2, alpha_h_3])
@@ -170,7 +183,7 @@ class BarrierLayer(nn.Module):
                 control_bound = acceleration[CAV_index - 1] + self.k1*(v_im_ls[0] - v_i_ls[0] - tau*u_min) - u_nominal
                 # control_bound = 10000*torch.ones(1)
 
-            alpha_h_1 = (self.gamma[0]*(s_i - tau * v_i).pow(1) - bias)
+            alpha_h_1 = (self.gamma[0]*(s_i - tau * v_i - min_gap).pow(1))
             alpha_h_2 = (self.gamma[1]*(s_f_1 - s_i - tau * (v_f_1 - v_i)).pow(1))
             alpha_h_3 = (self.gamma[2]*(s_f_2 - s_i - tau * (v_f_2 - v_i)).pow(1))
             alpha_h_ls = torch.hstack([alpha_h_1, alpha_h_2, alpha_h_3])

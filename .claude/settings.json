@@ -24,7 +24,9 @@
       "PowerShell($env:MPLBACKEND='Agg'; $env:WANDB_MODE='offline'; conda run -n python310 python main.py --train_scenario -1 --domain_randomize true --reward_clip 15 --brake_accel 5 --accel_mag 1 --num_episodes 200 --eval_freq 20 --eval_episodes 3 --SIDE_load true --seed 0 --run_name G1_mixed_clip15_lr3e4)",
       "PowerShell(conda run -n python310 python _eval.py --ckpt_dir model_parameters/runG1_final --episode 200 --eval_episodes 6)",
       "PowerShell($env:MPLBACKEND='Agg'; $env:WANDB_MODE='offline'; conda run -n python310 python main.py --train_scenario -1 --domain_randomize true --reward_clip 15 --brake_accel 5 --accel_mag 1 --lr_a 1e-4 --lr_c 1e-4 --num_episodes 200 --eval_freq 20 --eval_episodes 3 --SIDE_load true --seed 0 --run_name G2_mixed_lr1e4)",
-      "PowerShell($env:MPLBACKEND='Agg'; conda run -n python310 python make_figures.py --ckpt_dir model_parameters/runG1_final --episode 200 --prefix G1)"
+      "PowerShell($env:MPLBACKEND='Agg'; conda run -n python310 python make_figures.py --ckpt_dir model_parameters/runG1_final --episode 200 --prefix G1)",
+      "Bash(conda run *)",
+      "Bash(grep -vE \"UserWarning|warnings.warn|^\\\\s*$\")"
     ]
   }
 }
